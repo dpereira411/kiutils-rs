@@ -1,3 +1,15 @@
+//! Typed KiCad file readers built on top of lossless S-expression CST parsing.
+//!
+//! Scope (v1):
+//! - `.kicad_pcb`
+//! - `.kicad_mod`
+//! - `fp-lib-table`
+//! - `.kicad_dru`
+//! - `.kicad_pro`
+//!
+//! Default write mode is lossless:
+//! parse -> modify typed AST -> write without regenerating unrelated formatting.
+
 mod batch;
 mod diagnostic;
 mod dru;
