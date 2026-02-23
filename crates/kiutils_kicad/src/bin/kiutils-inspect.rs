@@ -230,8 +230,16 @@ fn inspect_pcb(opts: &Opts) -> Result<(), String> {
             json!(doc.ast().setup.as_ref().map(|s| s.has_plot_settings)),
         );
         m.insert(
-            "setup_pad_to_mask_clearance".into(),
-            json!(doc.ast().setup.as_ref().and_then(|s| s.pad_to_mask_clearance)),
+                "setup_pad_to_mask_clearance".into(),
+                json!(doc.ast().setup.as_ref().and_then(|s| s.pad_to_mask_clearance)),
+            );
+        m.insert(
+            "has_embedded_files".into(),
+            json!(doc.ast().has_embedded_files),
+        );
+        m.insert(
+            "embedded_file_count".into(),
+            json!(doc.ast().embedded_file_count),
         );
         m.insert("layer_count".into(), json!(doc.ast().layer_count));
         m.insert("property_count".into(), json!(doc.ast().property_count));
@@ -356,6 +364,8 @@ fn inspect_pcb(opts: &Opts) -> Result<(), String> {
             "setup_pad_to_mask_clearance: {:?}",
             doc.ast().setup.as_ref().and_then(|s| s.pad_to_mask_clearance)
         );
+        println!("has_embedded_files: {}", doc.ast().has_embedded_files);
+        println!("embedded_file_count: {}", doc.ast().embedded_file_count);
         println!("layer_count: {}", doc.ast().layer_count);
         println!("property_count: {}", doc.ast().property_count);
         println!("net_count: {}", doc.ast().net_count);

@@ -149,6 +149,8 @@ pub struct PcbAst {
     pub has_setup: bool,
     pub setup: Option<PcbSetupSummary>,
     pub has_embedded_fonts: bool,
+    pub has_embedded_files: bool,
+    pub embedded_file_count: usize,
     pub properties: Vec<PcbProperty>,
     pub layers: Vec<PcbLayer>,
     pub nets: Vec<PcbNet>,
@@ -276,6 +278,8 @@ fn parse_ast(cst: &CstDocument) -> PcbAst {
     let mut has_setup = false;
     let mut setup = None;
     let mut has_embedded_fonts = false;
+    let mut has_embedded_files = false;
+    let mut embedded_file_count = 0usize;
     let mut properties = Vec::new();
     let mut layers = Vec::new();
     let mut nets = Vec::new();
@@ -340,6 +344,15 @@ fn parse_ast(cst: &CstDocument) -> PcbAst {
                     setup = Some(parse_setup_summary(item));
                 }
                 Some("embedded_fonts") => has_embedded_fonts = true,
+                Some("embedded_files") => {
+                    has_embedded_files = true;
+                    if let Node::List { items: inner, .. } = item {
+                        embedded_file_count = inner
+                            .iter()
+                            .filter(|n| matches!(head_of(n), Some("file")))
+                            .count();
+                    }
+                }
                 Some("property") => {
                     property_count += 1;
                     if let Some(p) = parse_property(item) {
@@ -438,6 +451,8 @@ fn parse_ast(cst: &CstDocument) -> PcbAst {
         has_setup,
         setup,
         has_embedded_fonts,
+        has_embedded_files,
+        embedded_file_count,
         properties,
         layers,
         nets,
@@ -1128,7 +1143,23 @@ mod tests {
         assert_eq!(doc.ast().group_count, 1);
         assert_eq!(doc.ast().groups.len(), 1);
         assert_eq!(doc.ast().groups[0].member_count, 2);
+        assert!(!doc.ast().has_embedded_files);
+        assert_eq!(doc.ast().embedded_file_count, 0);
         assert!(doc.ast().has_setup);
+        assert!(doc.ast().unknown_nodes.is_empty());
+
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn parses_embedded_files_regression() {
+        let path = tmp_file("pcb_embedded_files");
+        let src = "(kicad_pcb (version 20260101) (generator pcbnew)\n  (embedded_files\n    (file (name \"A.bin\") (type \"binary\") (data \"abc\"))\n    (file (name \"B.bin\") (type \"binary\") (data \"def\"))\n  )\n)\n";
+        fs::write(&path, src).expect("write fixture");
+
+        let doc = PcbFile::read(&path).expect("read");
+        assert!(doc.ast().has_embedded_files);
+        assert_eq!(doc.ast().embedded_file_count, 2);
         assert!(doc.ast().unknown_nodes.is_empty());
 
         let _ = fs::remove_file(path);
