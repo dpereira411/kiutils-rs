@@ -25,6 +25,15 @@ pub struct PcbNet {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct PcbFootprintSummary {
+    pub lib_id: Option<String>,
+    pub layer: Option<String>,
+    pub reference: Option<String>,
+    pub value: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct PcbAst {
     pub version: Option<i32>,
     pub generator: Option<String>,
@@ -36,6 +45,7 @@ pub struct PcbAst {
     pub has_embedded_fonts: bool,
     pub layers: Vec<PcbLayer>,
     pub nets: Vec<PcbNet>,
+    pub footprints: Vec<PcbFootprintSummary>,
     pub layer_count: usize,
     pub property_count: usize,
     pub net_count: usize,
@@ -144,6 +154,7 @@ fn parse_ast(cst: &CstDocument) -> PcbAst {
     let mut has_embedded_fonts = false;
     let mut layers = Vec::new();
     let mut nets = Vec::new();
+    let mut footprints = Vec::new();
     let mut layer_count = 0usize;
     let mut property_count = 0usize;
     let mut net_count = 0usize;
@@ -190,7 +201,10 @@ fn parse_ast(cst: &CstDocument) -> PcbAst {
                     net_count += 1;
                     nets.push(parse_net(item));
                 }
-                Some("footprint") => footprint_count += 1,
+                Some("footprint") => {
+                    footprint_count += 1;
+                    footprints.push(parse_footprint_summary(item));
+                }
                 Some("segment") => trace_segment_count += 1,
                 Some("arc") => trace_arc_count += 1,
                 Some("via") => via_count += 1,
@@ -220,6 +234,7 @@ fn parse_ast(cst: &CstDocument) -> PcbAst {
         has_embedded_fonts,
         layers,
         nets,
+        footprints,
         layer_count,
         property_count,
         net_count,
@@ -298,6 +313,53 @@ fn parse_net(node: &Node) -> PcbNet {
     let code = items.get(1).and_then(atom_as_i32);
     let name = items.get(2).and_then(atom_as_string);
     PcbNet { code, name }
+}
+
+fn parse_footprint_summary(node: &Node) -> PcbFootprintSummary {
+    let Node::List { items, .. } = node else {
+        return PcbFootprintSummary {
+            lib_id: None,
+            layer: None,
+            reference: None,
+            value: None,
+        };
+    };
+
+    let lib_id = items.get(1).and_then(atom_as_string);
+    let mut layer = None;
+    let mut reference = None;
+    let mut value = None;
+
+    for child in items.iter().skip(2) {
+        let Some(head) = head_of(child) else {
+            continue;
+        };
+        match head {
+            "layer" => {
+                layer = second_atom_string(child);
+            }
+            "property" => {
+                let Node::List { items: props, .. } = child else {
+                    continue;
+                };
+                let key = props.get(1).and_then(atom_as_string);
+                let val = props.get(2).and_then(atom_as_string);
+                match key.as_deref() {
+                    Some("Reference") => reference = val,
+                    Some("Value") => value = val,
+                    _ => {}
+                }
+            }
+            _ => {}
+        }
+    }
+
+    PcbFootprintSummary {
+        lib_id,
+        layer,
+        reference,
+        value,
+    }
 }
 
 fn atom_as_string(node: &Node) -> Option<String> {
@@ -470,6 +532,8 @@ mod tests {
         assert_eq!(doc.ast().nets.len(), 1);
         assert_eq!(doc.ast().nets[0].name.as_deref(), Some(""));
         assert_eq!(doc.ast().footprint_count, 1);
+        assert_eq!(doc.ast().footprints.len(), 1);
+        assert_eq!(doc.ast().footprints[0].lib_id.as_deref(), Some("R_0603"));
         assert_eq!(doc.ast().graphic_count, 1);
         assert_eq!(doc.ast().trace_segment_count, 1);
         assert_eq!(doc.ast().via_count, 1);

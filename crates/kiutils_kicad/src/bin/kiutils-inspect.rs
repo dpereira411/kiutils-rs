@@ -150,8 +150,11 @@ fn inspect_pcb(opts: &Opts) -> Result<(), String> {
                 "generator_version": doc.ast().generator_version,
                 "parsed_layer_entries": doc.ast().layers.len(),
                 "parsed_net_entries": doc.ast().nets.len(),
+                "parsed_footprint_entries": doc.ast().footprints.len(),
                 "first_layer": doc.ast().layers.first().and_then(|l| l.name.clone()),
                 "first_net": doc.ast().nets.first().and_then(|n| n.name.clone()),
+                "first_footprint_lib_id": doc.ast().footprints.first().and_then(|f| f.lib_id.clone()),
+                "first_footprint_ref": doc.ast().footprints.first().and_then(|f| f.reference.clone()),
                 "layer_count": doc.ast().layer_count,
                 "property_count": doc.ast().property_count,
                 "net_count": doc.ast().net_count,
@@ -177,6 +180,7 @@ fn inspect_pcb(opts: &Opts) -> Result<(), String> {
         println!("generator_version: {:?}", doc.ast().generator_version);
         println!("parsed_layer_entries: {}", doc.ast().layers.len());
         println!("parsed_net_entries: {}", doc.ast().nets.len());
+        println!("parsed_footprint_entries: {}", doc.ast().footprints.len());
         println!(
             "first_layer: {:?}",
             doc.ast().layers.first().and_then(|l| l.name.clone())
@@ -184,6 +188,14 @@ fn inspect_pcb(opts: &Opts) -> Result<(), String> {
         println!(
             "first_net: {:?}",
             doc.ast().nets.first().and_then(|n| n.name.clone())
+        );
+        println!(
+            "first_footprint_lib_id: {:?}",
+            doc.ast().footprints.first().and_then(|f| f.lib_id.clone())
+        );
+        println!(
+            "first_footprint_ref: {:?}",
+            doc.ast().footprints.first().and_then(|f| f.reference.clone())
         );
         println!("layer_count: {}", doc.ast().layer_count);
         println!("property_count: {}", doc.ast().property_count);
