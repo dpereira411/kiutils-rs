@@ -51,6 +51,14 @@ pub struct PcbAst {
     pub net_count: usize,
     pub footprint_count: usize,
     pub graphic_count: usize,
+    pub gr_line_count: usize,
+    pub gr_rect_count: usize,
+    pub gr_circle_count: usize,
+    pub gr_arc_count: usize,
+    pub gr_poly_count: usize,
+    pub gr_curve_count: usize,
+    pub gr_text_count: usize,
+    pub gr_text_box_count: usize,
     pub trace_segment_count: usize,
     pub trace_arc_count: usize,
     pub via_count: usize,
@@ -160,6 +168,14 @@ fn parse_ast(cst: &CstDocument) -> PcbAst {
     let mut net_count = 0usize;
     let mut footprint_count = 0usize;
     let mut graphic_count = 0usize;
+    let mut gr_line_count = 0usize;
+    let mut gr_rect_count = 0usize;
+    let mut gr_circle_count = 0usize;
+    let mut gr_arc_count = 0usize;
+    let mut gr_poly_count = 0usize;
+    let mut gr_curve_count = 0usize;
+    let mut gr_text_count = 0usize;
+    let mut gr_text_box_count = 0usize;
     let mut trace_segment_count = 0usize;
     let mut trace_arc_count = 0usize;
     let mut via_count = 0usize;
@@ -213,6 +229,38 @@ fn parse_ast(cst: &CstDocument) -> PcbAst {
                 Some("target") => target_count += 1,
                 Some("group") => group_count += 1,
                 Some("generated") => generated_count += 1,
+                Some("gr_line") => {
+                    graphic_count += 1;
+                    gr_line_count += 1;
+                }
+                Some("gr_rect") => {
+                    graphic_count += 1;
+                    gr_rect_count += 1;
+                }
+                Some("gr_circle") => {
+                    graphic_count += 1;
+                    gr_circle_count += 1;
+                }
+                Some("gr_arc") => {
+                    graphic_count += 1;
+                    gr_arc_count += 1;
+                }
+                Some("gr_poly") => {
+                    graphic_count += 1;
+                    gr_poly_count += 1;
+                }
+                Some("gr_curve") => {
+                    graphic_count += 1;
+                    gr_curve_count += 1;
+                }
+                Some("gr_text") => {
+                    graphic_count += 1;
+                    gr_text_count += 1;
+                }
+                Some("gr_text_box") => {
+                    graphic_count += 1;
+                    gr_text_box_count += 1;
+                }
                 Some(h) if h.starts_with("gr_") => graphic_count += 1,
                 _ => {
                     if let Some(unknown) = UnknownNode::from_node(item) {
@@ -240,6 +288,14 @@ fn parse_ast(cst: &CstDocument) -> PcbAst {
         net_count,
         footprint_count,
         graphic_count,
+        gr_line_count,
+        gr_rect_count,
+        gr_circle_count,
+        gr_arc_count,
+        gr_poly_count,
+        gr_curve_count,
+        gr_text_count,
+        gr_text_box_count,
         trace_segment_count,
         trace_arc_count,
         via_count,
@@ -535,6 +591,7 @@ mod tests {
         assert_eq!(doc.ast().footprints.len(), 1);
         assert_eq!(doc.ast().footprints[0].lib_id.as_deref(), Some("R_0603"));
         assert_eq!(doc.ast().graphic_count, 1);
+        assert_eq!(doc.ast().gr_line_count, 1);
         assert_eq!(doc.ast().trace_segment_count, 1);
         assert_eq!(doc.ast().via_count, 1);
         assert_eq!(doc.ast().zone_count, 1);

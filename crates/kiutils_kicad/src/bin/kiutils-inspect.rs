@@ -160,6 +160,14 @@ fn inspect_pcb(opts: &Opts) -> Result<(), String> {
                 "net_count": doc.ast().net_count,
                 "footprint_count": doc.ast().footprint_count,
                 "graphic_count": doc.ast().graphic_count,
+                "gr_line_count": doc.ast().gr_line_count,
+                "gr_rect_count": doc.ast().gr_rect_count,
+                "gr_circle_count": doc.ast().gr_circle_count,
+                "gr_arc_count": doc.ast().gr_arc_count,
+                "gr_poly_count": doc.ast().gr_poly_count,
+                "gr_curve_count": doc.ast().gr_curve_count,
+                "gr_text_count": doc.ast().gr_text_count,
+                "gr_text_box_count": doc.ast().gr_text_box_count,
                 "trace_segment_count": doc.ast().trace_segment_count,
                 "trace_arc_count": doc.ast().trace_arc_count,
                 "via_count": doc.ast().via_count,
@@ -202,6 +210,14 @@ fn inspect_pcb(opts: &Opts) -> Result<(), String> {
         println!("net_count: {}", doc.ast().net_count);
         println!("footprint_count: {}", doc.ast().footprint_count);
         println!("graphic_count: {}", doc.ast().graphic_count);
+        println!("gr_line_count: {}", doc.ast().gr_line_count);
+        println!("gr_rect_count: {}", doc.ast().gr_rect_count);
+        println!("gr_circle_count: {}", doc.ast().gr_circle_count);
+        println!("gr_arc_count: {}", doc.ast().gr_arc_count);
+        println!("gr_poly_count: {}", doc.ast().gr_poly_count);
+        println!("gr_curve_count: {}", doc.ast().gr_curve_count);
+        println!("gr_text_count: {}", doc.ast().gr_text_count);
+        println!("gr_text_box_count: {}", doc.ast().gr_text_box_count);
         println!("trace_segment_count: {}", doc.ast().trace_segment_count);
         println!("trace_arc_count: {}", doc.ast().trace_arc_count);
         println!("via_count: {}", doc.ast().via_count);
