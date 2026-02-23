@@ -6,6 +6,7 @@ mod lib_table;
 mod pcb;
 mod project;
 mod version;
+mod write_mode;
 
 pub use diagnostic::{Diagnostic, Severity, Span};
 pub use dru::{DesignRulesAst, DesignRulesDocument, DesignRulesFile};
@@ -15,3 +16,4 @@ pub use lib_table::{FpLibTableAst, FpLibTableDocument, FpLibTableFile};
 pub use pcb::{PcbAst, PcbDocument, PcbFile};
 pub use project::{ProjectAst, ProjectDocument, ProjectExtra, ProjectFile};
 pub use version::{KiCadSeries, VersionPolicy};
+pub use write_mode::WriteMode;

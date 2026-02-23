@@ -4,7 +4,7 @@ use std::path::Path;
 
 use serde_json::Value;
 
-use crate::Error;
+use crate::{Error, WriteMode};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProjectAst {
@@ -33,7 +33,18 @@ impl ProjectDocument {
     }
 
     pub fn write<P: AsRef<Path>>(&self, path: P) -> Result<(), Error> {
-        fs::write(path, &self.raw)?;
+        self.write_mode(path, WriteMode::Lossless)
+    }
+
+    pub fn write_mode<P: AsRef<Path>>(&self, path: P, mode: WriteMode) -> Result<(), Error> {
+        match mode {
+            WriteMode::Lossless => fs::write(path, &self.raw)?,
+            WriteMode::Canonical => {
+                let json = serde_json::to_string_pretty(&self.json)
+                    .map_err(|e| Error::Validation(format!("json serialization failed: {e}")))?;
+                fs::write(path, format!("{json}\n"))?;
+            }
+        }
         Ok(())
     }
 }

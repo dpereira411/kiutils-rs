@@ -28,6 +28,46 @@ impl CstDocument {
     pub fn to_lossless_string(&self) -> &str {
         &self.raw
     }
+
+    pub fn to_canonical_string(&self) -> String {
+        let mut out = String::new();
+        for (idx, node) in self.nodes.iter().enumerate() {
+            if idx > 0 {
+                out.push('\n');
+            }
+            fmt_node(node, &mut out);
+        }
+        out.push('\n');
+        out
+    }
+}
+
+fn fmt_node(node: &Node, out: &mut String) {
+    match node {
+        Node::List { items, .. } => {
+            out.push('(');
+            for (idx, item) in items.iter().enumerate() {
+                if idx > 0 {
+                    out.push(' ');
+                }
+                fmt_node(item, out);
+            }
+            out.push(')');
+        }
+        Node::Atom { atom, .. } => match atom {
+            Atom::Symbol(s) => out.push_str(s),
+            Atom::Quoted(s) => {
+                out.push('"');
+                for ch in s.chars() {
+                    if ch == '"' || ch == '\\' {
+                        out.push('\\');
+                    }
+                    out.push(ch);
+                }
+                out.push('"');
+            }
+        },
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -53,7 +93,10 @@ struct P<'a> {
 
 impl<'a> P<'a> {
     fn new(src: &'a str) -> Self {
-        Self { s: src.as_bytes(), i: 0 }
+        Self {
+            s: src.as_bytes(),
+            i: 0,
+        }
     }
 
     fn bump_ws(&mut self) {
@@ -82,7 +125,7 @@ impl<'a> P<'a> {
 
     fn parse_list(&mut self) -> Result<Node, ParseError> {
         let start = self.i;
-        self.i += 1; // '('
+        self.i += 1;
         let mut items = Vec::new();
         loop {
             self.bump_ws();
@@ -105,7 +148,7 @@ impl<'a> P<'a> {
 
     fn parse_quoted(&mut self) -> Result<Node, ParseError> {
         let start = self.i;
-        self.i += 1; // opening quote
+        self.i += 1;
         let mut out = String::new();
         while self.i < self.s.len() {
             let b = self.s[self.i];
@@ -209,5 +252,11 @@ mod tests {
     fn single_root_rejects_many() {
         let err = parse_one("(a)(b)").expect_err("must fail");
         assert_eq!(err, ParseError::ExpectedSingleRoot(2));
+    }
+
+    #[test]
+    fn canonical_prints_normalized() {
+        let doc = parse_one("(kicad_pcb   (version 20260101)   )").expect("parse");
+        assert_eq!(doc.to_canonical_string(), "(kicad_pcb (version 20260101))\n");
     }
 }

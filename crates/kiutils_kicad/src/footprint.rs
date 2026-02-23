@@ -5,7 +5,7 @@ use kiutils_sexpr::{parse_one, Atom, CstDocument, Node};
 
 use crate::diagnostic::{Diagnostic, Severity};
 use crate::version::VersionPolicy;
-use crate::Error;
+use crate::{Error, WriteMode};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FootprintAst {
@@ -33,7 +33,14 @@ impl FootprintDocument {
     }
 
     pub fn write<P: AsRef<Path>>(&self, path: P) -> Result<(), Error> {
-        fs::write(path, self.cst.to_lossless_string())?;
+        self.write_mode(path, WriteMode::Lossless)
+    }
+
+    pub fn write_mode<P: AsRef<Path>>(&self, path: P, mode: WriteMode) -> Result<(), Error> {
+        match mode {
+            WriteMode::Lossless => fs::write(path, self.cst.to_lossless_string())?,
+            WriteMode::Canonical => fs::write(path, self.cst.to_canonical_string())?,
+        }
         Ok(())
     }
 }
