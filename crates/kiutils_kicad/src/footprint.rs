@@ -25,6 +25,7 @@ pub struct FootprintAst {
     pub embedded_fonts_present: bool,
     pub has_embedded_files: bool,
     pub embedded_file_count: usize,
+    pub clearance: Option<String>,
     pub solder_mask_margin: Option<String>,
     pub solder_paste_margin: Option<String>,
     pub solder_paste_margin_ratio: Option<String>,
@@ -140,6 +141,7 @@ fn parse_ast(cst: &CstDocument) -> FootprintAst {
     let mut embedded_fonts_present = false;
     let mut has_embedded_files = false;
     let mut embedded_file_count = 0usize;
+    let mut clearance = None;
     let mut solder_mask_margin = None;
     let mut solder_paste_margin = None;
     let mut solder_paste_margin_ratio = None;
@@ -179,6 +181,7 @@ fn parse_ast(cst: &CstDocument) -> FootprintAst {
                     has_embedded_files = true;
                     embedded_file_count = list_child_head_count(item, "file");
                 }
+                Some("clearance") => clearance = second_atom_string(item),
                 Some("solder_mask_margin") => solder_mask_margin = second_atom_string(item),
                 Some("solder_paste_margin") => solder_paste_margin = second_atom_string(item),
                 Some("solder_paste_margin_ratio") => {
@@ -254,6 +257,7 @@ fn parse_ast(cst: &CstDocument) -> FootprintAst {
         embedded_fonts_present,
         has_embedded_files,
         embedded_file_count,
+        clearance,
         solder_mask_margin,
         solder_paste_margin,
         solder_paste_margin_ratio,
@@ -430,6 +434,7 @@ mod tests {
         assert!(!doc.ast().embedded_fonts_present);
         assert!(!doc.ast().has_embedded_files);
         assert_eq!(doc.ast().embedded_file_count, 0);
+        assert_eq!(doc.ast().clearance, None);
         assert_eq!(doc.ast().solder_mask_margin.as_deref(), Some("0.02"));
         assert_eq!(doc.ast().solder_paste_margin.as_deref(), Some("-0.01"));
         assert_eq!(doc.ast().solder_paste_margin_ratio.as_deref(), Some("-0.2"));
@@ -475,10 +480,11 @@ mod tests {
     #[test]
     fn parses_solder_margins_and_jumpers_regression() {
         let path = tmp_file("footprint_margins_jumpers");
-        let src = "(footprint \"X\" (version 20260101) (generator pcbnew)\n  (solder_mask_margin 0.03)\n  (solder_paste_margin -0.02)\n  (solder_paste_margin_ratio -0.3)\n  (duplicate_pad_numbers_are_jumpers no)\n)\n";
+        let src = "(footprint \"X\" (version 20260101) (generator pcbnew)\n  (clearance 0.15)\n  (solder_mask_margin 0.03)\n  (solder_paste_margin -0.02)\n  (solder_paste_margin_ratio -0.3)\n  (duplicate_pad_numbers_are_jumpers no)\n)\n";
         fs::write(&path, src).expect("write fixture");
 
         let doc = FootprintFile::read(&path).expect("read");
+        assert_eq!(doc.ast().clearance.as_deref(), Some("0.15"));
         assert_eq!(doc.ast().solder_mask_margin.as_deref(), Some("0.03"));
         assert_eq!(doc.ast().solder_paste_margin.as_deref(), Some("-0.02"));
         assert_eq!(doc.ast().solder_paste_margin_ratio.as_deref(), Some("-0.3"));
