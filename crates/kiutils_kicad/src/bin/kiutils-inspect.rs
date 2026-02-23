@@ -146,6 +146,21 @@ fn inspect_pcb(opts: &Opts) -> Result<(), String> {
                 "kind": "pcb",
                 "path": opts.path,
                 "version": doc.ast().version,
+                "generator": doc.ast().generator,
+                "generator_version": doc.ast().generator_version,
+                "layer_count": doc.ast().layer_count,
+                "property_count": doc.ast().property_count,
+                "net_count": doc.ast().net_count,
+                "footprint_count": doc.ast().footprint_count,
+                "graphic_count": doc.ast().graphic_count,
+                "trace_segment_count": doc.ast().trace_segment_count,
+                "trace_arc_count": doc.ast().trace_arc_count,
+                "via_count": doc.ast().via_count,
+                "zone_count": doc.ast().zone_count,
+                "dimension_count": doc.ast().dimension_count,
+                "target_count": doc.ast().target_count,
+                "group_count": doc.ast().group_count,
+                "generated_count": doc.ast().generated_count,
                 "unknown_count": doc.ast().unknown_nodes.len(),
                 "diagnostic_count": doc.diagnostics().len(),
             })
@@ -154,6 +169,21 @@ fn inspect_pcb(opts: &Opts) -> Result<(), String> {
         println!("kind: pcb");
         println!("path: {}", opts.path.display());
         println!("version: {:?}", doc.ast().version);
+        println!("generator: {:?}", doc.ast().generator);
+        println!("generator_version: {:?}", doc.ast().generator_version);
+        println!("layer_count: {}", doc.ast().layer_count);
+        println!("property_count: {}", doc.ast().property_count);
+        println!("net_count: {}", doc.ast().net_count);
+        println!("footprint_count: {}", doc.ast().footprint_count);
+        println!("graphic_count: {}", doc.ast().graphic_count);
+        println!("trace_segment_count: {}", doc.ast().trace_segment_count);
+        println!("trace_arc_count: {}", doc.ast().trace_arc_count);
+        println!("via_count: {}", doc.ast().via_count);
+        println!("zone_count: {}", doc.ast().zone_count);
+        println!("dimension_count: {}", doc.ast().dimension_count);
+        println!("target_count: {}", doc.ast().target_count);
+        println!("group_count: {}", doc.ast().group_count);
+        println!("generated_count: {}", doc.ast().generated_count);
         println!("unknown_count: {}", doc.ast().unknown_nodes.len());
         println!("diagnostic_count: {}", doc.diagnostics().len());
     }

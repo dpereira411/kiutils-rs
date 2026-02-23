@@ -11,6 +11,26 @@ use crate::{Error, UnknownNode, WriteMode};
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct PcbAst {
     pub version: Option<i32>,
+    pub generator: Option<String>,
+    pub generator_version: Option<String>,
+    pub has_general: bool,
+    pub has_paper: bool,
+    pub has_title_block: bool,
+    pub has_setup: bool,
+    pub has_embedded_fonts: bool,
+    pub layer_count: usize,
+    pub property_count: usize,
+    pub net_count: usize,
+    pub footprint_count: usize,
+    pub graphic_count: usize,
+    pub trace_segment_count: usize,
+    pub trace_arc_count: usize,
+    pub via_count: usize,
+    pub zone_count: usize,
+    pub dimension_count: usize,
+    pub target_count: usize,
+    pub group_count: usize,
+    pub generated_count: usize,
     pub unknown_nodes: Vec<UnknownNode>,
 }
 
@@ -97,45 +117,128 @@ fn ensure_head(cst: &CstDocument, expected: &str) -> Result<(), Error> {
 
 fn parse_ast(cst: &CstDocument) -> PcbAst {
     let mut version = None;
+    let mut generator = None;
+    let mut generator_version = None;
+    let mut has_general = false;
+    let mut has_paper = false;
+    let mut has_title_block = false;
+    let mut has_setup = false;
+    let mut has_embedded_fonts = false;
+    let mut layer_count = 0usize;
+    let mut property_count = 0usize;
+    let mut net_count = 0usize;
+    let mut footprint_count = 0usize;
+    let mut graphic_count = 0usize;
+    let mut trace_segment_count = 0usize;
+    let mut trace_arc_count = 0usize;
+    let mut via_count = 0usize;
+    let mut zone_count = 0usize;
+    let mut dimension_count = 0usize;
+    let mut target_count = 0usize;
+    let mut group_count = 0usize;
+    let mut generated_count = 0usize;
     let mut unknown_nodes = Vec::new();
-    let known_heads = ["version", "generator"];
 
     if let Some(Node::List { items, .. }) = cst.nodes.first() {
         for (idx, item) in items.iter().enumerate() {
             if idx == 0 {
                 continue;
             }
-            if let Node::List { items: inner, .. } = item {
-                if let [
-                    Node::Atom {
-                        atom: Atom::Symbol(head),
-                        ..
-                    },
-                    Node::Atom {
-                        atom: Atom::Symbol(v),
-                        ..
-                    },
-                    ..,
-                ] = inner.as_slice()
-                {
-                    if known_heads.contains(&head.as_str()) {
-                        if head == "version" {
-                            version = v.parse::<i32>().ok();
-                        }
-                        continue;
+            match head_of(item) {
+                Some("version") => {
+                    version = second_atom_string(item).and_then(|v| v.parse::<i32>().ok());
+                }
+                Some("generator") => {
+                    generator = second_atom_string(item);
+                }
+                Some("generator_version") => {
+                    generator_version = second_atom_string(item);
+                }
+                Some("general") => has_general = true,
+                Some("paper") => has_paper = true,
+                Some("title_block") => has_title_block = true,
+                Some("layers") => {
+                    if let Node::List { items: inner, .. } = item {
+                        layer_count = inner.len().saturating_sub(1);
                     }
                 }
-            }
-
-            if let Some(unknown) = UnknownNode::from_node(item) {
-                unknown_nodes.push(unknown);
+                Some("setup") => has_setup = true,
+                Some("embedded_fonts") => has_embedded_fonts = true,
+                Some("property") => property_count += 1,
+                Some("net") => net_count += 1,
+                Some("footprint") => footprint_count += 1,
+                Some("segment") => trace_segment_count += 1,
+                Some("arc") => trace_arc_count += 1,
+                Some("via") => via_count += 1,
+                Some("zone") => zone_count += 1,
+                Some("dimension") => dimension_count += 1,
+                Some("target") => target_count += 1,
+                Some("group") => group_count += 1,
+                Some("generated") => generated_count += 1,
+                Some(h) if h.starts_with("gr_") => graphic_count += 1,
+                _ => {
+                    if let Some(unknown) = UnknownNode::from_node(item) {
+                        unknown_nodes.push(unknown);
+                    }
+                }
             }
         }
     }
 
     PcbAst {
         version,
+        generator,
+        generator_version,
+        has_general,
+        has_paper,
+        has_title_block,
+        has_setup,
+        has_embedded_fonts,
+        layer_count,
+        property_count,
+        net_count,
+        footprint_count,
+        graphic_count,
+        trace_segment_count,
+        trace_arc_count,
+        via_count,
+        zone_count,
+        dimension_count,
+        target_count,
+        group_count,
+        generated_count,
         unknown_nodes,
+    }
+}
+
+fn head_of(node: &Node) -> Option<&str> {
+    let Node::List { items, .. } = node else {
+        return None;
+    };
+    let Some(Node::Atom {
+        atom: Atom::Symbol(head),
+        ..
+    }) = items.first()
+    else {
+        return None;
+    };
+    Some(head.as_str())
+}
+
+fn second_atom_string(node: &Node) -> Option<String> {
+    let Node::List { items, .. } = node else {
+        return None;
+    };
+    match items.get(1) {
+        Some(Node::Atom {
+            atom: Atom::Symbol(v),
+            ..
+        }) => Some(v.clone()),
+        Some(Node::Atom {
+            atom: Atom::Quoted(v),
+            ..
+        }) => Some(v.clone()),
+        _ => None,
     }
 }
 
@@ -190,6 +293,7 @@ mod tests {
 
         let doc = PcbFile::read(&path).expect("read");
         assert_eq!(doc.ast().version, Some(20260101));
+        assert_eq!(doc.ast().generator.as_deref(), Some("pcbnew"));
         assert!(doc.ast().unknown_nodes.is_empty());
         assert_eq!(doc.cst().to_lossless_string(), src);
 
@@ -274,5 +378,25 @@ mod tests {
 
         let _ = fs::remove_file(path);
         let _ = fs::remove_file(out);
+    }
+
+    #[test]
+    fn parses_top_level_counts() {
+        let path = tmp_file("pcb_counts");
+        let src = "(kicad_pcb (version 20260101) (generator pcbnew)\n  (layers (0 F.Cu signal) (31 B.Cu signal))\n  (setup)\n  (net 0 \"\")\n  (footprint \"R_0603\")\n  (gr_line (start 0 0) (end 1 1))\n  (segment (start 0 0) (end 1 1))\n  (via (at 0 0) (size 1) (drill 0.5) (layers F.Cu B.Cu))\n  (zone)\n)\n";
+        fs::write(&path, src).expect("write fixture");
+
+        let doc = PcbFile::read(&path).expect("read");
+        assert_eq!(doc.ast().layer_count, 2);
+        assert_eq!(doc.ast().net_count, 1);
+        assert_eq!(doc.ast().footprint_count, 1);
+        assert_eq!(doc.ast().graphic_count, 1);
+        assert_eq!(doc.ast().trace_segment_count, 1);
+        assert_eq!(doc.ast().via_count, 1);
+        assert_eq!(doc.ast().zone_count, 1);
+        assert!(doc.ast().has_setup);
+        assert!(doc.ast().unknown_nodes.is_empty());
+
+        let _ = fs::remove_file(path);
     }
 }
