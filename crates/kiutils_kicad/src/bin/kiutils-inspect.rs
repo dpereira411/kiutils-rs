@@ -148,6 +148,10 @@ fn inspect_pcb(opts: &Opts) -> Result<(), String> {
                 "version": doc.ast().version,
                 "generator": doc.ast().generator,
                 "generator_version": doc.ast().generator_version,
+                "parsed_layer_entries": doc.ast().layers.len(),
+                "parsed_net_entries": doc.ast().nets.len(),
+                "first_layer": doc.ast().layers.first().and_then(|l| l.name.clone()),
+                "first_net": doc.ast().nets.first().and_then(|n| n.name.clone()),
                 "layer_count": doc.ast().layer_count,
                 "property_count": doc.ast().property_count,
                 "net_count": doc.ast().net_count,
@@ -171,6 +175,16 @@ fn inspect_pcb(opts: &Opts) -> Result<(), String> {
         println!("version: {:?}", doc.ast().version);
         println!("generator: {:?}", doc.ast().generator);
         println!("generator_version: {:?}", doc.ast().generator_version);
+        println!("parsed_layer_entries: {}", doc.ast().layers.len());
+        println!("parsed_net_entries: {}", doc.ast().nets.len());
+        println!(
+            "first_layer: {:?}",
+            doc.ast().layers.first().and_then(|l| l.name.clone())
+        );
+        println!(
+            "first_net: {:?}",
+            doc.ast().nets.first().and_then(|n| n.name.clone())
+        );
         println!("layer_count: {}", doc.ast().layer_count);
         println!("property_count: {}", doc.ast().property_count);
         println!("net_count: {}", doc.ast().net_count);

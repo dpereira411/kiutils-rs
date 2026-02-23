@@ -29,7 +29,7 @@ pub use error::Error;
 pub use footprint::{FootprintAst, FootprintDocument, FootprintFile};
 pub use lib_table::{FpLibTableAst, FpLibTableDocument, FpLibTableFile};
 pub use unknown::{UnknownField, UnknownNode};
-pub use pcb::{PcbAst, PcbDocument, PcbFile};
+pub use pcb::{PcbAst, PcbDocument, PcbFile, PcbLayer, PcbNet};
 pub use project::{ProjectAst, ProjectDocument, ProjectExtra, ProjectFile};
 pub use version::{KiCadSeries, VersionPolicy};
 pub use write_mode::WriteMode;

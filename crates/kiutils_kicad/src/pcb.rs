@@ -9,6 +9,22 @@ use crate::{Error, UnknownNode, WriteMode};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct PcbLayer {
+    pub ordinal: Option<i32>,
+    pub name: Option<String>,
+    pub layer_type: Option<String>,
+    pub user_name: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct PcbNet {
+    pub code: Option<i32>,
+    pub name: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct PcbAst {
     pub version: Option<i32>,
     pub generator: Option<String>,
@@ -18,6 +34,8 @@ pub struct PcbAst {
     pub has_title_block: bool,
     pub has_setup: bool,
     pub has_embedded_fonts: bool,
+    pub layers: Vec<PcbLayer>,
+    pub nets: Vec<PcbNet>,
     pub layer_count: usize,
     pub property_count: usize,
     pub net_count: usize,
@@ -124,6 +142,8 @@ fn parse_ast(cst: &CstDocument) -> PcbAst {
     let mut has_title_block = false;
     let mut has_setup = false;
     let mut has_embedded_fonts = false;
+    let mut layers = Vec::new();
+    let mut nets = Vec::new();
     let mut layer_count = 0usize;
     let mut property_count = 0usize;
     let mut net_count = 0usize;
@@ -159,13 +179,17 @@ fn parse_ast(cst: &CstDocument) -> PcbAst {
                 Some("title_block") => has_title_block = true,
                 Some("layers") => {
                     if let Node::List { items: inner, .. } = item {
-                        layer_count = inner.len().saturating_sub(1);
+                        layers = parse_layers(inner);
+                        layer_count = layers.len();
                     }
                 }
                 Some("setup") => has_setup = true,
                 Some("embedded_fonts") => has_embedded_fonts = true,
                 Some("property") => property_count += 1,
-                Some("net") => net_count += 1,
+                Some("net") => {
+                    net_count += 1;
+                    nets.push(parse_net(item));
+                }
                 Some("footprint") => footprint_count += 1,
                 Some("segment") => trace_segment_count += 1,
                 Some("arc") => trace_arc_count += 1,
@@ -194,6 +218,8 @@ fn parse_ast(cst: &CstDocument) -> PcbAst {
         has_title_block,
         has_setup,
         has_embedded_fonts,
+        layers,
+        nets,
         layer_count,
         property_count,
         net_count,
@@ -240,6 +266,56 @@ fn second_atom_string(node: &Node) -> Option<String> {
         }) => Some(v.clone()),
         _ => None,
     }
+}
+
+fn parse_layers(items: &[Node]) -> Vec<PcbLayer> {
+    let mut out = Vec::new();
+    for entry in items.iter().skip(1) {
+        let Node::List { items: fields, .. } = entry else {
+            continue;
+        };
+        let ordinal = fields.first().and_then(atom_as_i32);
+        let name = fields.get(1).and_then(atom_as_string);
+        let layer_type = fields.get(2).and_then(atom_as_string);
+        let user_name = fields.get(3).and_then(atom_as_string);
+        out.push(PcbLayer {
+            ordinal,
+            name,
+            layer_type,
+            user_name,
+        });
+    }
+    out
+}
+
+fn parse_net(node: &Node) -> PcbNet {
+    let Node::List { items, .. } = node else {
+        return PcbNet {
+            code: None,
+            name: None,
+        };
+    };
+    let code = items.get(1).and_then(atom_as_i32);
+    let name = items.get(2).and_then(atom_as_string);
+    PcbNet { code, name }
+}
+
+fn atom_as_string(node: &Node) -> Option<String> {
+    match node {
+        Node::Atom {
+            atom: Atom::Symbol(v),
+            ..
+        } => Some(v.clone()),
+        Node::Atom {
+            atom: Atom::Quoted(v),
+            ..
+        } => Some(v.clone()),
+        _ => None,
+    }
+}
+
+fn atom_as_i32(node: &Node) -> Option<i32> {
+    atom_as_string(node).and_then(|s| s.parse::<i32>().ok())
 }
 
 fn validate_version(version: Option<i32>) -> Result<Vec<Diagnostic>, Error> {
@@ -388,7 +464,11 @@ mod tests {
 
         let doc = PcbFile::read(&path).expect("read");
         assert_eq!(doc.ast().layer_count, 2);
+        assert_eq!(doc.ast().layers.len(), 2);
+        assert_eq!(doc.ast().layers[0].name.as_deref(), Some("F.Cu"));
         assert_eq!(doc.ast().net_count, 1);
+        assert_eq!(doc.ast().nets.len(), 1);
+        assert_eq!(doc.ast().nets[0].name.as_deref(), Some(""));
         assert_eq!(doc.ast().footprint_count, 1);
         assert_eq!(doc.ast().graphic_count, 1);
         assert_eq!(doc.ast().trace_segment_count, 1);
