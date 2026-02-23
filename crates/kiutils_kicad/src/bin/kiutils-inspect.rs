@@ -441,7 +441,31 @@ fn inspect_footprint(opts: &Opts) -> Result<(), String> {
             json!({
                 "kind": "footprint",
                 "path": opts.path,
+                "lib_id": doc.ast().lib_id,
                 "version": doc.ast().version,
+                "generator": doc.ast().generator,
+                "generator_version": doc.ast().generator_version,
+                "layer": doc.ast().layer,
+                "descr": doc.ast().descr,
+                "tags": doc.ast().tags,
+                "property_count": doc.ast().property_count,
+                "attr_present": doc.ast().attr_present,
+                "private_layers_present": doc.ast().private_layers_present,
+                "net_tie_pad_groups_present": doc.ast().net_tie_pad_groups_present,
+                "embedded_fonts_present": doc.ast().embedded_fonts_present,
+                "pad_count": doc.ast().pad_count,
+                "model_count": doc.ast().model_count,
+                "zone_count": doc.ast().zone_count,
+                "group_count": doc.ast().group_count,
+                "graphic_count": doc.ast().graphic_count,
+                "fp_line_count": doc.ast().fp_line_count,
+                "fp_rect_count": doc.ast().fp_rect_count,
+                "fp_circle_count": doc.ast().fp_circle_count,
+                "fp_arc_count": doc.ast().fp_arc_count,
+                "fp_poly_count": doc.ast().fp_poly_count,
+                "fp_curve_count": doc.ast().fp_curve_count,
+                "fp_text_count": doc.ast().fp_text_count,
+                "fp_text_box_count": doc.ast().fp_text_box_count,
                 "unknown_count": doc.ast().unknown_nodes.len(),
                 "diagnostic_count": doc.diagnostics().len(),
             })
@@ -449,7 +473,37 @@ fn inspect_footprint(opts: &Opts) -> Result<(), String> {
     } else {
         println!("kind: footprint");
         println!("path: {}", opts.path.display());
+        println!("lib_id: {:?}", doc.ast().lib_id);
         println!("version: {:?}", doc.ast().version);
+        println!("generator: {:?}", doc.ast().generator);
+        println!("generator_version: {:?}", doc.ast().generator_version);
+        println!("layer: {:?}", doc.ast().layer);
+        println!("descr: {:?}", doc.ast().descr);
+        println!("tags: {:?}", doc.ast().tags);
+        println!("property_count: {}", doc.ast().property_count);
+        println!("attr_present: {}", doc.ast().attr_present);
+        println!(
+            "private_layers_present: {}",
+            doc.ast().private_layers_present
+        );
+        println!(
+            "net_tie_pad_groups_present: {}",
+            doc.ast().net_tie_pad_groups_present
+        );
+        println!("embedded_fonts_present: {}", doc.ast().embedded_fonts_present);
+        println!("pad_count: {}", doc.ast().pad_count);
+        println!("model_count: {}", doc.ast().model_count);
+        println!("zone_count: {}", doc.ast().zone_count);
+        println!("group_count: {}", doc.ast().group_count);
+        println!("graphic_count: {}", doc.ast().graphic_count);
+        println!("fp_line_count: {}", doc.ast().fp_line_count);
+        println!("fp_rect_count: {}", doc.ast().fp_rect_count);
+        println!("fp_circle_count: {}", doc.ast().fp_circle_count);
+        println!("fp_arc_count: {}", doc.ast().fp_arc_count);
+        println!("fp_poly_count: {}", doc.ast().fp_poly_count);
+        println!("fp_curve_count: {}", doc.ast().fp_curve_count);
+        println!("fp_text_count: {}", doc.ast().fp_text_count);
+        println!("fp_text_box_count: {}", doc.ast().fp_text_box_count);
         println!("unknown_count: {}", doc.ast().unknown_nodes.len());
         println!("diagnostic_count: {}", doc.diagnostics().len());
     }
