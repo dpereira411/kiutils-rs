@@ -36,6 +36,30 @@ cargo test -p kiutils_kicad --features serde
 cargo test -p kiutils_kicad --features parallel
 ```
 
+## Inspect CLI (test loop)
+
+Run parser inspection on a real file:
+
+```bash
+cargo run -p kiutils_kicad --bin kiutils-inspect -- <path>
+```
+
+Flags:
+- `--type auto|pcb|footprint|fplib|dru|project`
+- `--json`
+- `--show-cst`
+- `--show-canonical`
+- `--show-unknown`
+- `--show-diagnostics`
+
+Example:
+
+```bash
+cargo run -p kiutils_kicad --bin kiutils-inspect -- \
+  crates/kiutils_kicad/tests/fixtures/sample.kicad_pcb \
+  --show-unknown --show-diagnostics --show-canonical
+```
+
 ## License
 
 MIT
