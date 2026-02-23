@@ -23,6 +23,10 @@ pub struct FootprintAst {
     pub private_layers_present: bool,
     pub net_tie_pad_groups_present: bool,
     pub embedded_fonts_present: bool,
+    pub solder_mask_margin: Option<String>,
+    pub solder_paste_margin: Option<String>,
+    pub solder_paste_margin_ratio: Option<String>,
+    pub duplicate_pad_numbers_are_jumpers: Option<bool>,
     pub pad_count: usize,
     pub model_count: usize,
     pub zone_count: usize,
@@ -132,6 +136,10 @@ fn parse_ast(cst: &CstDocument) -> FootprintAst {
     let mut private_layers_present = false;
     let mut net_tie_pad_groups_present = false;
     let mut embedded_fonts_present = false;
+    let mut solder_mask_margin = None;
+    let mut solder_paste_margin = None;
+    let mut solder_paste_margin_ratio = None;
+    let mut duplicate_pad_numbers_are_jumpers = None;
     let mut pad_count = 0usize;
     let mut model_count = 0usize;
     let mut zone_count = 0usize;
@@ -163,6 +171,20 @@ fn parse_ast(cst: &CstDocument) -> FootprintAst {
                 Some("private_layers") => private_layers_present = true,
                 Some("net_tie_pad_groups") => net_tie_pad_groups_present = true,
                 Some("embedded_fonts") => embedded_fonts_present = true,
+                Some("solder_mask_margin") => solder_mask_margin = second_atom_string(item),
+                Some("solder_paste_margin") => solder_paste_margin = second_atom_string(item),
+                Some("solder_paste_margin_ratio") => {
+                    solder_paste_margin_ratio = second_atom_string(item)
+                }
+                Some("duplicate_pad_numbers_are_jumpers") => {
+                    duplicate_pad_numbers_are_jumpers = second_atom_string(item).and_then(|s| {
+                        match s.as_str() {
+                            "yes" => Some(true),
+                            "no" => Some(false),
+                            _ => None,
+                        }
+                    })
+                }
                 Some("pad") => pad_count += 1,
                 Some("model") => model_count += 1,
                 Some("zone") => zone_count += 1,
@@ -222,6 +244,10 @@ fn parse_ast(cst: &CstDocument) -> FootprintAst {
         private_layers_present,
         net_tie_pad_groups_present,
         embedded_fonts_present,
+        solder_mask_margin,
+        solder_paste_margin,
+        solder_paste_margin_ratio,
+        duplicate_pad_numbers_are_jumpers,
         pad_count,
         model_count,
         zone_count,
@@ -369,7 +395,7 @@ mod tests {
     #[test]
     fn read_footprint_parses_top_level_counts() {
         let path = tmp_file("footprint_counts");
-        let src = "(footprint \"X\" (version 20260101) (generator pcbnew) (generator_version \"10.0\") (layer \"F.Cu\")\n  (descr \"demo\")\n  (tags \"a b\")\n  (property \"Reference\" \"R?\")\n  (property \"Value\" \"X\")\n  (attr smd)\n  (private_layers \"In1.Cu\")\n  (net_tie_pad_groups \"1,2\")\n  (fp_text reference \"R1\" (at 0 0) (layer \"F.SilkS\"))\n  (fp_line (start 0 0) (end 1 1) (layer \"F.SilkS\"))\n  (pad \"1\" smd rect (at 0 0) (size 1 1) (layers \"F.Cu\" \"F.Mask\"))\n  (model \"foo.step\")\n  (zone)\n  (group (id \"g1\"))\n)\n";
+        let src = "(footprint \"X\" (version 20260101) (generator pcbnew) (generator_version \"10.0\") (layer \"F.Cu\")\n  (descr \"demo\")\n  (tags \"a b\")\n  (property \"Reference\" \"R?\")\n  (property \"Value\" \"X\")\n  (attr smd)\n  (private_layers \"In1.Cu\")\n  (net_tie_pad_groups \"1,2\")\n  (solder_mask_margin 0.02)\n  (solder_paste_margin -0.01)\n  (solder_paste_margin_ratio -0.2)\n  (duplicate_pad_numbers_are_jumpers yes)\n  (fp_text reference \"R1\" (at 0 0) (layer \"F.SilkS\"))\n  (fp_line (start 0 0) (end 1 1) (layer \"F.SilkS\"))\n  (pad \"1\" smd rect (at 0 0) (size 1 1) (layers \"F.Cu\" \"F.Mask\"))\n  (model \"foo.step\")\n  (zone)\n  (group (id \"g1\"))\n)\n";
         fs::write(&path, src).expect("write fixture");
 
         let doc = FootprintFile::read(&path).expect("read");
@@ -382,6 +408,10 @@ mod tests {
         assert!(doc.ast().private_layers_present);
         assert!(doc.ast().net_tie_pad_groups_present);
         assert!(!doc.ast().embedded_fonts_present);
+        assert_eq!(doc.ast().solder_mask_margin.as_deref(), Some("0.02"));
+        assert_eq!(doc.ast().solder_paste_margin.as_deref(), Some("-0.01"));
+        assert_eq!(doc.ast().solder_paste_margin_ratio.as_deref(), Some("-0.2"));
+        assert_eq!(doc.ast().duplicate_pad_numbers_are_jumpers, Some(true));
         assert_eq!(doc.ast().fp_text_count, 1);
         assert_eq!(doc.ast().fp_line_count, 1);
         assert_eq!(doc.ast().graphic_count, 2);
@@ -415,6 +445,22 @@ mod tests {
 
         let doc = FootprintFile::read(&path).expect("read");
         assert!(doc.ast().locked_present);
+        assert!(doc.ast().unknown_nodes.is_empty());
+
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn parses_solder_margins_and_jumpers_regression() {
+        let path = tmp_file("footprint_margins_jumpers");
+        let src = "(footprint \"X\" (version 20260101) (generator pcbnew)\n  (solder_mask_margin 0.03)\n  (solder_paste_margin -0.02)\n  (solder_paste_margin_ratio -0.3)\n  (duplicate_pad_numbers_are_jumpers no)\n)\n";
+        fs::write(&path, src).expect("write fixture");
+
+        let doc = FootprintFile::read(&path).expect("read");
+        assert_eq!(doc.ast().solder_mask_margin.as_deref(), Some("0.03"));
+        assert_eq!(doc.ast().solder_paste_margin.as_deref(), Some("-0.02"));
+        assert_eq!(doc.ast().solder_paste_margin_ratio.as_deref(), Some("-0.3"));
+        assert_eq!(doc.ast().duplicate_pad_numbers_are_jumpers, Some(false));
         assert!(doc.ast().unknown_nodes.is_empty());
 
         let _ = fs::remove_file(path);
