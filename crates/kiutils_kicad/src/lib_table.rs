@@ -8,6 +8,7 @@ use crate::{Error, UnknownNode, WriteMode};
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct FpLibTableAst {
+    pub version: Option<i32>,
     pub library_count: usize,
     pub unknown_nodes: Vec<UnknownNode>,
 }
@@ -77,6 +78,7 @@ impl FpLibTableFile {
             )));
         }
 
+        let mut version = None;
         let library_count = root_items
             .iter()
             .filter(|n| match n {
@@ -90,6 +92,27 @@ impl FpLibTableFile {
                 _ => false,
             })
             .count();
+        for item in root_items.iter().skip(1) {
+            if let Node::List { items, .. } = item {
+                if let [
+                    Node::Atom {
+                        atom: Atom::Symbol(head),
+                        ..
+                    },
+                    Node::Atom { atom, .. },
+                    ..,
+                ] = items.as_slice()
+                {
+                    if head == "version" {
+                        match atom {
+                            Atom::Symbol(v) | Atom::Quoted(v) => {
+                                version = v.parse::<i32>().ok();
+                            }
+                        }
+                    }
+                }
+            }
+        }
 
         let unknown_nodes = root_items
             .iter()
@@ -100,6 +123,10 @@ impl FpLibTableFile {
                         atom: Atom::Symbol(s),
                         ..
                     }) if s == "lib" => None,
+                    Some(Node::Atom {
+                        atom: Atom::Symbol(s),
+                        ..
+                    }) if s == "version" => None,
                     _ => UnknownNode::from_node(n),
                 },
                 _ => UnknownNode::from_node(n),
@@ -108,6 +135,7 @@ impl FpLibTableFile {
 
         Ok(FpLibTableDocument {
             ast: FpLibTableAst {
+                version,
                 library_count,
                 unknown_nodes,
             },
@@ -134,10 +162,11 @@ mod tests {
     #[test]
     fn read_fp_lib_table() {
         let path = tmp_file("fplib_ok");
-        let src = "(fp_lib_table\n  (lib (name \"A\") (type \"KiCad\") (uri \"x\") (options \"\") (descr \"\"))\n)\n";
+        let src = "(fp_lib_table\n  (version 7)\n  (lib (name \"A\") (type \"KiCad\") (uri \"x\") (options \"\") (descr \"\"))\n)\n";
         fs::write(&path, src).expect("write fixture");
 
         let doc = FpLibTableFile::read(&path).expect("read");
+        assert_eq!(doc.ast().version, Some(7));
         assert_eq!(doc.ast().library_count, 1);
         assert!(doc.ast().unknown_nodes.is_empty());
 
