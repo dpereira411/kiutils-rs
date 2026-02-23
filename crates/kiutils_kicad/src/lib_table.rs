@@ -3,11 +3,12 @@ use std::path::Path;
 
 use kiutils_sexpr::{parse_one, Atom, CstDocument, Node};
 
-use crate::{Error, WriteMode};
+use crate::{Error, UnknownNode, WriteMode};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FpLibTableAst {
     pub library_count: usize,
+    pub unknown_nodes: Vec<UnknownNode>,
 }
 
 #[derive(Debug, Clone)]
@@ -19,6 +20,10 @@ pub struct FpLibTableDocument {
 impl FpLibTableDocument {
     pub fn ast(&self) -> &FpLibTableAst {
         &self.ast
+    }
+
+    pub fn ast_mut(&mut self) -> &mut FpLibTableAst {
+        &mut self.ast
     }
 
     pub fn cst(&self) -> &CstDocument {
@@ -85,8 +90,26 @@ impl FpLibTableFile {
             })
             .count();
 
+        let unknown_nodes = root_items
+            .iter()
+            .skip(1)
+            .filter_map(|n| match n {
+                Node::List { items, .. } => match items.first() {
+                    Some(Node::Atom {
+                        atom: Atom::Symbol(s),
+                        ..
+                    }) if s == "lib" => None,
+                    _ => UnknownNode::from_node(n),
+                },
+                _ => UnknownNode::from_node(n),
+            })
+            .collect();
+
         Ok(FpLibTableDocument {
-            ast: FpLibTableAst { library_count },
+            ast: FpLibTableAst {
+                library_count,
+                unknown_nodes,
+            },
             cst,
         })
     }
@@ -115,6 +138,23 @@ mod tests {
 
         let doc = FpLibTableFile::read(&path).expect("read");
         assert_eq!(doc.ast().library_count, 1);
+        assert!(doc.ast().unknown_nodes.is_empty());
+
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn read_fp_lib_table_captures_unknown() {
+        let path = tmp_file("fplib_unknown");
+        let src = "(fp_lib_table\n  (lib (name \"A\") (type \"KiCad\") (uri \"x\") (options \"\") (descr \"\"))\n  (unknown_table_item 1)\n)\n";
+        fs::write(&path, src).expect("write fixture");
+
+        let doc = FpLibTableFile::read(&path).expect("read");
+        assert_eq!(doc.ast().unknown_nodes.len(), 1);
+        assert_eq!(
+            doc.ast().unknown_nodes[0].head.as_deref(),
+            Some("unknown_table_item")
+        );
 
         let _ = fs::remove_file(path);
     }

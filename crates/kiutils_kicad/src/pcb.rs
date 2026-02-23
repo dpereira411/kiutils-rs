@@ -5,11 +5,12 @@ use kiutils_sexpr::{parse_one, Atom, CstDocument, Node};
 
 use crate::diagnostic::{Diagnostic, Severity};
 use crate::version::VersionPolicy;
-use crate::{Error, WriteMode};
+use crate::{Error, UnknownNode, WriteMode};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PcbAst {
     pub version: Option<i32>,
+    pub unknown_nodes: Vec<UnknownNode>,
 }
 
 #[derive(Debug, Clone)]
@@ -22,6 +23,10 @@ pub struct PcbDocument {
 impl PcbDocument {
     pub fn ast(&self) -> &PcbAst {
         &self.ast
+    }
+
+    pub fn ast_mut(&mut self) -> &mut PcbAst {
+        &mut self.ast
     }
 
     pub fn cst(&self) -> &CstDocument {
@@ -91,9 +96,14 @@ fn ensure_head(cst: &CstDocument, expected: &str) -> Result<(), Error> {
 
 fn parse_ast(cst: &CstDocument) -> PcbAst {
     let mut version = None;
+    let mut unknown_nodes = Vec::new();
+    let known_heads = ["version", "generator"];
 
     if let Some(Node::List { items, .. }) = cst.nodes.first() {
-        for item in items {
+        for (idx, item) in items.iter().enumerate() {
+            if idx == 0 {
+                continue;
+            }
             if let Node::List { items: inner, .. } = item {
                 if let [
                     Node::Atom {
@@ -107,16 +117,25 @@ fn parse_ast(cst: &CstDocument) -> PcbAst {
                     ..,
                 ] = inner.as_slice()
                 {
-                    if head == "version" {
-                        version = v.parse::<i32>().ok();
-                        break;
+                    if known_heads.contains(&head.as_str()) {
+                        if head == "version" {
+                            version = v.parse::<i32>().ok();
+                        }
+                        continue;
                     }
                 }
+            }
+
+            if let Some(unknown) = UnknownNode::from_node(item) {
+                unknown_nodes.push(unknown);
             }
         }
     }
 
-    PcbAst { version }
+    PcbAst {
+        version,
+        unknown_nodes,
+    }
 }
 
 fn validate_version(version: Option<i32>) -> Result<Vec<Diagnostic>, Error> {
@@ -170,6 +189,7 @@ mod tests {
 
         let doc = PcbFile::read(&path).expect("read");
         assert_eq!(doc.ast().version, Some(20260101));
+        assert!(doc.ast().unknown_nodes.is_empty());
         assert_eq!(doc.cst().to_lossless_string(), src);
 
         let out = tmp_file("pcb_write_ok");
@@ -231,6 +251,25 @@ mod tests {
         doc.write_mode(&out, WriteMode::Canonical).expect("write");
         let written = fs::read_to_string(&out).expect("read out");
         assert_eq!(written, "(kicad_pcb (version 20260101))\n");
+
+        let _ = fs::remove_file(path);
+        let _ = fs::remove_file(out);
+    }
+
+    #[test]
+    fn captures_unknown_nodes_and_preserves_roundtrip() {
+        let path = tmp_file("pcb_unknown");
+        let src = "(kicad_pcb (version 20260101) (generator pcbnew) (mystery_token 1 2))\n";
+        fs::write(&path, src).expect("write fixture");
+
+        let doc = PcbFile::read(&path).expect("read");
+        assert_eq!(doc.ast().unknown_nodes.len(), 1);
+        assert_eq!(doc.ast().unknown_nodes[0].head.as_deref(), Some("mystery_token"));
+
+        let out = tmp_file("pcb_unknown_out");
+        doc.write(&out).expect("write");
+        let roundtrip = fs::read_to_string(&out).expect("read out");
+        assert_eq!(roundtrip, src);
 
         let _ = fs::remove_file(path);
         let _ = fs::remove_file(out);

@@ -5,11 +5,12 @@ use kiutils_sexpr::{parse_one, Atom, CstDocument, Node};
 
 use crate::diagnostic::{Diagnostic, Severity};
 use crate::version::VersionPolicy;
-use crate::{Error, WriteMode};
+use crate::{Error, UnknownNode, WriteMode};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FootprintAst {
     pub version: Option<i32>,
+    pub unknown_nodes: Vec<UnknownNode>,
 }
 
 #[derive(Debug, Clone)]
@@ -22,6 +23,10 @@ pub struct FootprintDocument {
 impl FootprintDocument {
     pub fn ast(&self) -> &FootprintAst {
         &self.ast
+    }
+
+    pub fn ast_mut(&mut self) -> &mut FootprintAst {
+        &mut self.ast
     }
 
     pub fn cst(&self) -> &CstDocument {
@@ -54,6 +59,7 @@ impl FootprintFile {
         ensure_head(&cst, "footprint")?;
         let ast = FootprintAst {
             version: find_version(&cst),
+            unknown_nodes: find_unknown_nodes(&cst),
         };
         let diagnostics = validate_version(ast.version)?;
         Ok(FootprintDocument {
@@ -115,6 +121,34 @@ fn find_version(cst: &CstDocument) -> Option<i32> {
     None
 }
 
+fn find_unknown_nodes(cst: &CstDocument) -> Vec<UnknownNode> {
+    let mut out = Vec::new();
+    let known_heads = ["version", "generator"];
+    if let Some(Node::List { items, .. }) = cst.nodes.first() {
+        for (idx, item) in items.iter().enumerate() {
+            if idx <= 1 {
+                continue;
+            }
+            if let Node::List { items: inner, .. } = item {
+                if let Some(Node::Atom {
+                    atom: Atom::Symbol(head),
+                    ..
+                }) = inner.first()
+                {
+                    if known_heads.contains(&head.as_str()) {
+                        continue;
+                    }
+                }
+            }
+
+            if let Some(unknown) = UnknownNode::from_node(item) {
+                out.push(unknown);
+            }
+        }
+    }
+    out
+}
+
 fn validate_version(version: Option<i32>) -> Result<Vec<Diagnostic>, Error> {
     let policy = VersionPolicy::default();
     let mut diagnostics = Vec::new();
@@ -166,6 +200,7 @@ mod tests {
 
         let doc = FootprintFile::read(&path).expect("read");
         assert_eq!(doc.ast().version, Some(20260101));
+        assert!(doc.ast().unknown_nodes.is_empty());
         assert_eq!(doc.cst().to_lossless_string(), src);
 
         let _ = fs::remove_file(path);
@@ -182,6 +217,20 @@ mod tests {
 
         let doc = FootprintFile::read(&path).expect("read");
         assert_eq!(doc.diagnostics().len(), 1);
+
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn read_footprint_captures_unknown_nodes() {
+        let path = tmp_file("footprint_unknown");
+        let src =
+            "(footprint \"R\" (version 20260101) (generator pcbnew) (future_shape foo bar))\n";
+        fs::write(&path, src).expect("write fixture");
+
+        let doc = FootprintFile::read(&path).expect("read");
+        assert_eq!(doc.ast().unknown_nodes.len(), 1);
+        assert_eq!(doc.ast().unknown_nodes[0].head.as_deref(), Some("future_shape"));
 
         let _ = fs::remove_file(path);
     }

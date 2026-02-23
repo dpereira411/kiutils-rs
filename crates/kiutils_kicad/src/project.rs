@@ -4,12 +4,13 @@ use std::path::Path;
 
 use serde_json::Value;
 
-use crate::{Error, WriteMode};
+use crate::{Error, UnknownField, WriteMode};
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ProjectAst {
     pub meta_version: Option<i32>,
     pub pinned_footprint_libs: Vec<String>,
+    pub unknown_fields: Vec<UnknownField>,
 }
 
 #[derive(Debug, Clone)]
@@ -22,6 +23,10 @@ pub struct ProjectDocument {
 impl ProjectDocument {
     pub fn ast(&self) -> &ProjectAst {
         &self.ast
+    }
+
+    pub fn ast_mut(&mut self) -> &mut ProjectAst {
+        &mut self.ast
     }
 
     pub fn raw(&self) -> &str {
@@ -77,10 +82,25 @@ impl ProjectFile {
             })
             .unwrap_or_default();
 
+        let known_top_level = ["meta", "libraries", "board", "sheets", "boards", "text_variables"];
+        let unknown_fields = json
+            .as_object()
+            .map(|o| {
+                o.iter()
+                    .filter(|(k, _)| !known_top_level.contains(&k.as_str()))
+                    .map(|(k, v)| UnknownField {
+                        key: k.clone(),
+                        value: v.clone(),
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+
         Ok(ProjectDocument {
             ast: ProjectAst {
                 meta_version,
                 pinned_footprint_libs,
+                unknown_fields,
             },
             raw,
             json,
@@ -119,7 +139,26 @@ mod tests {
         let doc = ProjectFile::read(&path).expect("read");
         assert_eq!(doc.ast().meta_version, Some(3));
         assert_eq!(doc.ast().pinned_footprint_libs, vec!["A", "B"]);
+        assert!(doc.ast().unknown_fields.is_empty());
         assert_eq!(doc.raw(), src);
+
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn read_project_captures_unknown_top_level_fields() {
+        let path = tmp_file("pro_unknown");
+        let src = r#"{
+  "meta": { "version": 3 },
+  "libraries": { "pinned_footprint_libs": ["A"] },
+  "custom_top": { "x": 1 }
+}
+"#;
+        fs::write(&path, src).expect("write fixture");
+
+        let doc = ProjectFile::read(&path).expect("read");
+        assert_eq!(doc.ast().unknown_fields.len(), 1);
+        assert_eq!(doc.ast().unknown_fields[0].key, "custom_top");
 
         let _ = fs::remove_file(path);
     }
