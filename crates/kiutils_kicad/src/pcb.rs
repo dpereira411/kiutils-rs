@@ -178,6 +178,32 @@ pub struct PcbSetupSummary {
 
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct PcbGeneralSummary {
+    pub thickness: Option<f64>,
+    pub legacy_teardrops: Option<bool>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct PcbPaperSummary {
+    pub kind: Option<String>,
+    pub width: Option<f64>,
+    pub height: Option<f64>,
+    pub orientation: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct PcbTitleBlockSummary {
+    pub title: Option<String>,
+    pub date: Option<String>,
+    pub revision: Option<String>,
+    pub company: Option<String>,
+    pub comments: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct PcbAst {
     pub version: Option<i32>,
     pub generator: Option<String>,
@@ -185,6 +211,9 @@ pub struct PcbAst {
     pub has_general: bool,
     pub has_paper: bool,
     pub has_title_block: bool,
+    pub general: Option<PcbGeneralSummary>,
+    pub paper: Option<PcbPaperSummary>,
+    pub title_block: Option<PcbTitleBlockSummary>,
     pub has_setup: bool,
     pub setup: Option<PcbSetupSummary>,
     pub has_embedded_fonts: bool,
@@ -315,6 +344,9 @@ fn parse_ast(cst: &CstDocument) -> PcbAst {
     let mut has_general = false;
     let mut has_paper = false;
     let mut has_title_block = false;
+    let mut general = None;
+    let mut paper = None;
+    let mut title_block = None;
     let mut has_setup = false;
     let mut setup = None;
     let mut has_embedded_fonts = false;
@@ -371,9 +403,18 @@ fn parse_ast(cst: &CstDocument) -> PcbAst {
                 Some("generator_version") => {
                     generator_version = second_atom_string(item);
                 }
-                Some("general") => has_general = true,
-                Some("paper") => has_paper = true,
-                Some("title_block") => has_title_block = true,
+                Some("general") => {
+                    has_general = true;
+                    general = Some(parse_general_summary(item));
+                }
+                Some("paper") => {
+                    has_paper = true;
+                    paper = Some(parse_paper_summary(item));
+                }
+                Some("title_block") => {
+                    has_title_block = true;
+                    title_block = Some(parse_title_block_summary(item));
+                }
                 Some("layers") => {
                     if let Node::List { items: inner, .. } = item {
                         layers = parse_layers(inner);
@@ -500,6 +541,9 @@ fn parse_ast(cst: &CstDocument) -> PcbAst {
         has_general,
         has_paper,
         has_title_block,
+        general,
+        paper,
+        title_block,
         has_setup,
         setup,
         has_embedded_fonts,
@@ -1107,6 +1151,78 @@ fn parse_property(node: &Node) -> Option<PcbProperty> {
     Some(PcbProperty { key, value })
 }
 
+fn parse_general_summary(node: &Node) -> PcbGeneralSummary {
+    let mut thickness = None;
+    let mut legacy_teardrops = None;
+    if let Node::List { items, .. } = node {
+        for child in items.iter().skip(1) {
+            match head_of(child) {
+                Some("thickness") => thickness = second_atom_f64(child),
+                Some("legacy_teardrops") => legacy_teardrops = second_atom_bool(child),
+                _ => {}
+            }
+        }
+    }
+    PcbGeneralSummary {
+        thickness,
+        legacy_teardrops,
+    }
+}
+
+fn parse_paper_summary(node: &Node) -> PcbPaperSummary {
+    let Node::List { items, .. } = node else {
+        return PcbPaperSummary {
+            kind: None,
+            width: None,
+            height: None,
+            orientation: None,
+        };
+    };
+
+    let kind = items.get(1).and_then(atom_as_string);
+    let width = items.get(2).and_then(atom_as_f64);
+    let height = items.get(3).and_then(atom_as_f64);
+    let orientation = items.get(4).and_then(atom_as_string);
+
+    PcbPaperSummary {
+        kind,
+        width,
+        height,
+        orientation,
+    }
+}
+
+fn parse_title_block_summary(node: &Node) -> PcbTitleBlockSummary {
+    let mut title = None;
+    let mut date = None;
+    let mut revision = None;
+    let mut company = None;
+    let mut comments = Vec::new();
+    if let Node::List { items, .. } = node {
+        for child in items.iter().skip(1) {
+            match head_of(child) {
+                Some("title") => title = second_atom_string(child),
+                Some("date") => date = second_atom_string(child),
+                Some("rev") => revision = second_atom_string(child),
+                Some("company") => company = second_atom_string(child),
+                Some("comment") => {
+                    if let Some(comment) = second_atom_string(child) {
+                        comments.push(comment);
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    PcbTitleBlockSummary {
+        title,
+        date,
+        revision,
+        company,
+        comments,
+    }
+}
+
 fn parse_setup_summary(node: &Node) -> PcbSetupSummary {
     let mut has_stackup = false;
     let mut stackup_layer_count = 0usize;
@@ -1355,7 +1471,7 @@ mod tests {
     #[test]
     fn parses_top_level_counts() {
         let path = tmp_file("pcb_counts");
-        let src = "(kicad_pcb (version 20260101) (generator pcbnew)\n  (property \"Owner\" \"Milind\")\n  (layers (0 F.Cu signal) (31 B.Cu signal))\n  (setup (stackup (layer \"F.Cu\" (type \"copper\")) (layer \"B.Cu\" (type \"copper\"))) (pcbplotparams) (pad_to_mask_clearance 0.1) (solder_mask_min_width 0.0) (aux_axis_origin 10 20) (grid_origin 11 21))\n  (net 0 \"\")\n  (footprint \"R_0603\"\n    (at 10 20 90)\n    (layer F.Cu)\n    (uuid \"fp-1\")\n    (property \"Reference\" \"R1\")\n    (property \"Value\" \"1k\")\n    (fp_line (start 0 0) (end 1 1) (layer F.SilkS))\n    (fp_text reference \"R1\" (at 0 0) (layer F.SilkS))\n    (pad \"1\" smd rect (at 0 0) (size 1 1) (layers F.Cu F.Mask))\n    (model \"r.step\")\n  )\n  (gr_line locked (start 0 0) (end 1 1) (layer F.Cu) (uuid \"g-1\"))\n  (segment locked (start 0 0) (end 1 1) (width 0.25) (layer F.Cu) (net 0) (uuid \"s-1\"))\n  (arc (start 0 0) (mid 0.5 0.5) (end 1 1) (width 0.25) (layer F.Cu) (net 0) (uuid \"a-1\"))\n  (via blind locked (at 0 0) (size 1) (drill oval 0.5 0.25) (layers F.Cu B.Cu) (uuid \"v-1\"))\n  (zone)\n  (dimension aligned (layer F.Cu) (gr_text \"1.0\" (at 0 0)))\n  (target plus (at 1 2) (size 1) (width 0.1) (layer F.Cu))\n  (group (name \"G\") (id \"abc\") (members \"u1\" \"u2\"))\n)\n";
+        let src = "(kicad_pcb (version 20260101) (generator pcbnew)\n  (general (thickness 1.6) (legacy_teardrops no))\n  (paper \"User\" 100 80 portrait)\n  (title_block (title \"Demo\") (date \"2026-02-23\") (rev \"A\") (company \"Milind\") (comment 1 \"c1\") (comment 2 \"c2\"))\n  (property \"Owner\" \"Milind\")\n  (layers (0 F.Cu signal) (31 B.Cu signal))\n  (setup (stackup (layer \"F.Cu\" (type \"copper\")) (layer \"B.Cu\" (type \"copper\"))) (pcbplotparams) (pad_to_mask_clearance 0.1) (solder_mask_min_width 0.0) (aux_axis_origin 10 20) (grid_origin 11 21))\n  (net 0 \"\")\n  (footprint \"R_0603\"\n    (at 10 20 90)\n    (layer F.Cu)\n    (uuid \"fp-1\")\n    (property \"Reference\" \"R1\")\n    (property \"Value\" \"1k\")\n    (fp_line (start 0 0) (end 1 1) (layer F.SilkS))\n    (fp_text reference \"R1\" (at 0 0) (layer F.SilkS))\n    (pad \"1\" smd rect (at 0 0) (size 1 1) (layers F.Cu F.Mask))\n    (model \"r.step\")\n  )\n  (gr_line locked (start 0 0) (end 1 1) (layer F.Cu) (uuid \"g-1\"))\n  (segment locked (start 0 0) (end 1 1) (width 0.25) (layer F.Cu) (net 0) (uuid \"s-1\"))\n  (arc (start 0 0) (mid 0.5 0.5) (end 1 1) (width 0.25) (layer F.Cu) (net 0) (uuid \"a-1\"))\n  (via blind locked (at 0 0) (size 1) (drill oval 0.5 0.25) (layers F.Cu B.Cu) (uuid \"v-1\"))\n  (zone)\n  (dimension aligned (layer F.Cu) (gr_text \"1.0\" (at 0 0)))\n  (target plus (at 1 2) (size 1) (width 0.1) (layer F.Cu))\n  (group (name \"G\") (id \"abc\") (members \"u1\" \"u2\"))\n)\n";
         fs::write(&path, src).expect("write fixture");
 
         let doc = PcbFile::read(&path).expect("read");
@@ -1365,6 +1481,38 @@ mod tests {
         assert_eq!(doc.ast().property_count, 1);
         assert_eq!(doc.ast().properties.len(), 1);
         assert_eq!(doc.ast().properties[0].key, "Owner");
+        assert!(doc.ast().has_general);
+        assert!(doc.ast().has_paper);
+        assert!(doc.ast().has_title_block);
+        assert_eq!(
+            doc.ast().general.as_ref().and_then(|g| g.thickness),
+            Some(1.6)
+        );
+        assert_eq!(
+            doc.ast().general.as_ref().and_then(|g| g.legacy_teardrops),
+            Some(false)
+        );
+        assert_eq!(
+            doc.ast().paper.as_ref().and_then(|p| p.kind.clone()),
+            Some("User".to_string())
+        );
+        assert_eq!(doc.ast().paper.as_ref().and_then(|p| p.width), Some(100.0));
+        assert_eq!(doc.ast().paper.as_ref().and_then(|p| p.height), Some(80.0));
+        assert_eq!(
+            doc.ast().paper.as_ref().and_then(|p| p.orientation.clone()),
+            Some("portrait".to_string())
+        );
+        assert_eq!(
+            doc.ast()
+                .title_block
+                .as_ref()
+                .and_then(|t| t.title.clone()),
+            Some("Demo".to_string())
+        );
+        assert_eq!(
+            doc.ast().title_block.as_ref().map(|t| t.comments.len()),
+            Some(2)
+        );
         assert_eq!(doc.ast().setup.as_ref().map(|s| s.has_stackup), Some(true));
         assert_eq!(doc.ast().setup.as_ref().map(|s| s.stackup_layer_count), Some(2));
         assert_eq!(doc.ast().setup.as_ref().map(|s| s.has_plot_settings), Some(true));
