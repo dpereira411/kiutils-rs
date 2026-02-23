@@ -271,6 +271,18 @@ fn inspect_pcb(opts: &Opts) -> Result<(), String> {
             json!(doc.ast().setup.as_ref().map(|s| s.has_stackup)),
         );
         m.insert(
+            "general_thickness".into(),
+            json!(doc.ast().general.as_ref().and_then(|g| g.thickness)),
+        );
+        m.insert(
+            "paper_kind".into(),
+            json!(doc.ast().paper.as_ref().and_then(|p| p.kind.clone())),
+        );
+        m.insert(
+            "title_block_title".into(),
+            json!(doc.ast().title_block.as_ref().and_then(|t| t.title.clone())),
+        );
+        m.insert(
             "setup_stackup_layer_count".into(),
             json!(doc.ast().setup.as_ref().map(|s| s.stackup_layer_count)),
         );
@@ -449,6 +461,18 @@ fn inspect_pcb(opts: &Opts) -> Result<(), String> {
         println!(
             "setup_has_stackup: {:?}",
             doc.ast().setup.as_ref().map(|s| s.has_stackup)
+        );
+        println!(
+            "general_thickness: {:?}",
+            doc.ast().general.as_ref().and_then(|g| g.thickness)
+        );
+        println!(
+            "paper_kind: {:?}",
+            doc.ast().paper.as_ref().and_then(|p| p.kind.clone())
+        );
+        println!(
+            "title_block_title: {:?}",
+            doc.ast().title_block.as_ref().and_then(|t| t.title.clone())
         );
         println!(
             "setup_stackup_layer_count: {:?}",
