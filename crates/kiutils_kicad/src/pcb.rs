@@ -90,6 +90,33 @@ pub struct PcbGeneratedSummary {
     pub members_count: usize,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct PcbDimensionSummary {
+    pub dimension_type: Option<String>,
+    pub layer: Option<String>,
+    pub gr_text_count: usize,
+    pub format_present: bool,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct PcbTargetSummary {
+    pub shape: Option<String>,
+    pub at: Option<[f64; 2]>,
+    pub size: Option<f64>,
+    pub width: Option<f64>,
+    pub layer: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct PcbGroupSummary {
+    pub name: Option<String>,
+    pub group_id: Option<String>,
+    pub member_count: usize,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct PcbProperty {
@@ -131,6 +158,9 @@ pub struct PcbAst {
     pub vias: Vec<PcbViaSummary>,
     pub zones: Vec<PcbZoneSummary>,
     pub generated_items: Vec<PcbGeneratedSummary>,
+    pub dimensions: Vec<PcbDimensionSummary>,
+    pub targets: Vec<PcbTargetSummary>,
+    pub groups: Vec<PcbGroupSummary>,
     pub layer_count: usize,
     pub property_count: usize,
     pub net_count: usize,
@@ -255,6 +285,9 @@ fn parse_ast(cst: &CstDocument) -> PcbAst {
     let mut vias = Vec::new();
     let mut zones = Vec::new();
     let mut generated_items = Vec::new();
+    let mut dimensions = Vec::new();
+    let mut targets = Vec::new();
+    let mut groups = Vec::new();
     let mut layer_count = 0usize;
     let mut property_count = 0usize;
     let mut net_count = 0usize;
@@ -337,9 +370,18 @@ fn parse_ast(cst: &CstDocument) -> PcbAst {
                     zone_count += 1;
                     zones.push(parse_zone_summary(item));
                 }
-                Some("dimension") => dimension_count += 1,
-                Some("target") => target_count += 1,
-                Some("group") => group_count += 1,
+                Some("dimension") => {
+                    dimension_count += 1;
+                    dimensions.push(parse_dimension_summary(item));
+                }
+                Some("target") => {
+                    target_count += 1;
+                    targets.push(parse_target_summary(item));
+                }
+                Some("group") => {
+                    group_count += 1;
+                    groups.push(parse_group_summary(item));
+                }
                 Some("generated") => {
                     generated_count += 1;
                     generated_items.push(parse_generated_summary(item));
@@ -405,6 +447,9 @@ fn parse_ast(cst: &CstDocument) -> PcbAst {
         vias,
         zones,
         generated_items,
+        dimensions,
+        targets,
+        groups,
         layer_count,
         property_count,
         net_count,
@@ -720,6 +765,83 @@ fn parse_generated_summary(node: &Node) -> PcbGeneratedSummary {
     }
 }
 
+fn parse_dimension_summary(node: &Node) -> PcbDimensionSummary {
+    let mut dimension_type = None;
+    let mut layer = None;
+    let mut gr_text_count = 0usize;
+    let mut format_present = false;
+    if let Node::List { items, .. } = node {
+        // Sometimes second token is kind: (dimension aligned ...)
+        dimension_type = items.get(1).and_then(atom_as_string);
+        for child in items.iter().skip(1) {
+            match head_of(child) {
+                Some("layer") => layer = second_atom_string(child),
+                Some("gr_text") => gr_text_count += 1,
+                Some("format") => format_present = true,
+                _ => {}
+            }
+        }
+    }
+    PcbDimensionSummary {
+        dimension_type,
+        layer,
+        gr_text_count,
+        format_present,
+    }
+}
+
+fn parse_target_summary(node: &Node) -> PcbTargetSummary {
+    let mut shape = None;
+    let mut at = None;
+    let mut size = None;
+    let mut width = None;
+    let mut layer = None;
+    if let Node::List { items, .. } = node {
+        shape = items.get(1).and_then(atom_as_string);
+        for child in items.iter().skip(1) {
+            match head_of(child) {
+                Some("at") => at = parse_xy(child),
+                Some("size") => size = second_atom_f64(child),
+                Some("width") => width = second_atom_f64(child),
+                Some("layer") => layer = second_atom_string(child),
+                _ => {}
+            }
+        }
+    }
+    PcbTargetSummary {
+        shape,
+        at,
+        size,
+        width,
+        layer,
+    }
+}
+
+fn parse_group_summary(node: &Node) -> PcbGroupSummary {
+    let mut name = None;
+    let mut group_id = None;
+    let mut member_count = 0usize;
+    if let Node::List { items, .. } = node {
+        for child in items.iter().skip(1) {
+            match head_of(child) {
+                Some("name") => name = second_atom_string(child),
+                Some("id") => group_id = second_atom_string(child),
+                Some("members") => {
+                    if let Node::List { items: inner, .. } = child {
+                        member_count = inner.len().saturating_sub(1);
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    PcbGroupSummary {
+        name,
+        group_id,
+        member_count,
+    }
+}
+
 fn parse_property(node: &Node) -> Option<PcbProperty> {
     let Node::List { items, .. } = node else {
         return None;
@@ -963,7 +1085,7 @@ mod tests {
     #[test]
     fn parses_top_level_counts() {
         let path = tmp_file("pcb_counts");
-        let src = "(kicad_pcb (version 20260101) (generator pcbnew)\n  (property \"Owner\" \"Milind\")\n  (layers (0 F.Cu signal) (31 B.Cu signal))\n  (setup (stackup (layer \"F.Cu\" (type \"copper\")) (layer \"B.Cu\" (type \"copper\"))) (pcbplotparams) (pad_to_mask_clearance 0.1) (solder_mask_min_width 0.0) (aux_axis_origin 10 20) (grid_origin 11 21))\n  (net 0 \"\")\n  (footprint \"R_0603\")\n  (gr_line (start 0 0) (end 1 1))\n  (segment (start 0 0) (end 1 1) (width 0.25) (layer F.Cu) (net 0))\n  (via (at 0 0) (size 1) (drill 0.5) (layers F.Cu B.Cu))\n  (zone)\n)\n";
+        let src = "(kicad_pcb (version 20260101) (generator pcbnew)\n  (property \"Owner\" \"Milind\")\n  (layers (0 F.Cu signal) (31 B.Cu signal))\n  (setup (stackup (layer \"F.Cu\" (type \"copper\")) (layer \"B.Cu\" (type \"copper\"))) (pcbplotparams) (pad_to_mask_clearance 0.1) (solder_mask_min_width 0.0) (aux_axis_origin 10 20) (grid_origin 11 21))\n  (net 0 \"\")\n  (footprint \"R_0603\")\n  (gr_line (start 0 0) (end 1 1))\n  (segment (start 0 0) (end 1 1) (width 0.25) (layer F.Cu) (net 0))\n  (via (at 0 0) (size 1) (drill 0.5) (layers F.Cu B.Cu))\n  (zone)\n  (dimension aligned (layer F.Cu) (gr_text \"1.0\" (at 0 0)))\n  (target plus (at 1 2) (size 1) (width 0.1) (layer F.Cu))\n  (group (name \"G\") (id \"abc\") (members \"u1\" \"u2\"))\n)\n";
         fs::write(&path, src).expect("write fixture");
 
         let doc = PcbFile::read(&path).expect("read");
@@ -997,6 +1119,15 @@ mod tests {
         assert_eq!(doc.ast().zone_count, 1);
         assert_eq!(doc.ast().zones.len(), 1);
         assert_eq!(doc.ast().zones[0].polygon_count, 0);
+        assert_eq!(doc.ast().dimension_count, 1);
+        assert_eq!(doc.ast().dimensions.len(), 1);
+        assert_eq!(doc.ast().dimensions[0].layer.as_deref(), Some("F.Cu"));
+        assert_eq!(doc.ast().target_count, 1);
+        assert_eq!(doc.ast().targets.len(), 1);
+        assert_eq!(doc.ast().targets[0].shape.as_deref(), Some("plus"));
+        assert_eq!(doc.ast().group_count, 1);
+        assert_eq!(doc.ast().groups.len(), 1);
+        assert_eq!(doc.ast().groups[0].member_count, 2);
         assert!(doc.ast().has_setup);
         assert!(doc.ast().unknown_nodes.is_empty());
 

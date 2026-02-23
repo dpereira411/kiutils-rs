@@ -158,6 +158,9 @@ fn inspect_pcb(opts: &Opts) -> Result<(), String> {
         m.insert("parsed_via_entries".into(), json!(doc.ast().vias.len()));
         m.insert("parsed_zone_entries".into(), json!(doc.ast().zones.len()));
         m.insert("parsed_generated_entries".into(), json!(doc.ast().generated_items.len()));
+        m.insert("parsed_dimension_entries".into(), json!(doc.ast().dimensions.len()));
+        m.insert("parsed_target_entries".into(), json!(doc.ast().targets.len()));
+        m.insert("parsed_group_entries".into(), json!(doc.ast().groups.len()));
         m.insert(
             "first_layer".into(),
             json!(doc.ast().layers.first().and_then(|l| l.name.clone())),
@@ -201,6 +204,18 @@ fn inspect_pcb(opts: &Opts) -> Result<(), String> {
         m.insert(
             "first_generated_last_netname".into(),
             json!(doc.ast().generated_items.first().and_then(|g| g.last_netname.clone())),
+        );
+        m.insert(
+            "first_dimension_type".into(),
+            json!(doc.ast().dimensions.first().and_then(|d| d.dimension_type.clone())),
+        );
+        m.insert(
+            "first_target_shape".into(),
+            json!(doc.ast().targets.first().and_then(|t| t.shape.clone())),
+        );
+        m.insert(
+            "first_group_member_count".into(),
+            json!(doc.ast().groups.first().map(|g| g.member_count)),
         );
         m.insert(
             "setup_has_stackup".into(),
@@ -257,6 +272,9 @@ fn inspect_pcb(opts: &Opts) -> Result<(), String> {
         println!("parsed_via_entries: {}", doc.ast().vias.len());
         println!("parsed_zone_entries: {}", doc.ast().zones.len());
         println!("parsed_generated_entries: {}", doc.ast().generated_items.len());
+        println!("parsed_dimension_entries: {}", doc.ast().dimensions.len());
+        println!("parsed_target_entries: {}", doc.ast().targets.len());
+        println!("parsed_group_entries: {}", doc.ast().groups.len());
         println!(
             "first_layer: {:?}",
             doc.ast().layers.first().and_then(|l| l.name.clone())
@@ -306,6 +324,21 @@ fn inspect_pcb(opts: &Opts) -> Result<(), String> {
                 .generated_items
                 .first()
                 .and_then(|g| g.last_netname.clone())
+        );
+        println!(
+            "first_dimension_type: {:?}",
+            doc.ast()
+                .dimensions
+                .first()
+                .and_then(|d| d.dimension_type.clone())
+        );
+        println!(
+            "first_target_shape: {:?}",
+            doc.ast().targets.first().and_then(|t| t.shape.clone())
+        );
+        println!(
+            "first_group_member_count: {:?}",
+            doc.ast().groups.first().map(|g| g.member_count)
         );
         println!(
             "setup_has_stackup: {:?}",
