@@ -179,8 +179,40 @@ fn inspect_pcb(opts: &Opts) -> Result<(), String> {
             json!(doc.ast().footprints.first().and_then(|f| f.reference.clone())),
         );
         m.insert(
+            "first_footprint_uuid".into(),
+            json!(doc.ast().footprints.first().and_then(|f| f.uuid.clone())),
+        );
+        m.insert(
+            "first_footprint_rotation".into(),
+            json!(doc.ast().footprints.first().and_then(|f| f.rotation)),
+        );
+        m.insert(
+            "first_footprint_pad_count".into(),
+            json!(doc.ast().footprints.first().map(|f| f.pad_count)),
+        );
+        m.insert(
             "first_segment_layer".into(),
             json!(doc.ast().segments.first().and_then(|s| s.layer.clone())),
+        );
+        m.insert(
+            "first_segment_uuid".into(),
+            json!(doc.ast().segments.first().and_then(|s| s.uuid.clone())),
+        );
+        m.insert(
+            "first_segment_locked".into(),
+            json!(doc.ast().segments.first().map(|s| s.locked)),
+        );
+        m.insert(
+            "first_via_uuid".into(),
+            json!(doc.ast().vias.first().and_then(|v| v.uuid.clone())),
+        );
+        m.insert(
+            "first_via_drill_shape".into(),
+            json!(doc.ast().vias.first().and_then(|v| v.drill_shape.clone())),
+        );
+        m.insert(
+            "first_via_locked".into(),
+            json!(doc.ast().vias.first().map(|v| v.locked)),
         );
         m.insert(
             "first_zone_net_name".into(),
@@ -225,6 +257,14 @@ fn inspect_pcb(opts: &Opts) -> Result<(), String> {
         m.insert(
             "first_graphic_layer".into(),
             json!(doc.ast().graphics.first().and_then(|g| g.layer.clone())),
+        );
+        m.insert(
+            "first_graphic_uuid".into(),
+            json!(doc.ast().graphics.first().and_then(|g| g.uuid.clone())),
+        );
+        m.insert(
+            "first_graphic_locked".into(),
+            json!(doc.ast().graphics.first().map(|g| g.locked)),
         );
         m.insert(
             "setup_has_stackup".into(),
@@ -310,8 +350,40 @@ fn inspect_pcb(opts: &Opts) -> Result<(), String> {
             doc.ast().footprints.first().and_then(|f| f.reference.clone())
         );
         println!(
+            "first_footprint_uuid: {:?}",
+            doc.ast().footprints.first().and_then(|f| f.uuid.clone())
+        );
+        println!(
+            "first_footprint_rotation: {:?}",
+            doc.ast().footprints.first().and_then(|f| f.rotation)
+        );
+        println!(
+            "first_footprint_pad_count: {:?}",
+            doc.ast().footprints.first().map(|f| f.pad_count)
+        );
+        println!(
             "first_segment_layer: {:?}",
             doc.ast().segments.first().and_then(|s| s.layer.clone())
+        );
+        println!(
+            "first_segment_uuid: {:?}",
+            doc.ast().segments.first().and_then(|s| s.uuid.clone())
+        );
+        println!(
+            "first_segment_locked: {:?}",
+            doc.ast().segments.first().map(|s| s.locked)
+        );
+        println!(
+            "first_via_uuid: {:?}",
+            doc.ast().vias.first().and_then(|v| v.uuid.clone())
+        );
+        println!(
+            "first_via_drill_shape: {:?}",
+            doc.ast().vias.first().and_then(|v| v.drill_shape.clone())
+        );
+        println!(
+            "first_via_locked: {:?}",
+            doc.ast().vias.first().map(|v| v.locked)
         );
         println!(
             "first_zone_net_name: {:?}",
@@ -365,6 +437,14 @@ fn inspect_pcb(opts: &Opts) -> Result<(), String> {
         println!(
             "first_graphic_layer: {:?}",
             doc.ast().graphics.first().and_then(|g| g.layer.clone())
+        );
+        println!(
+            "first_graphic_uuid: {:?}",
+            doc.ast().graphics.first().and_then(|g| g.uuid.clone())
+        );
+        println!(
+            "first_graphic_locked: {:?}",
+            doc.ast().graphics.first().map(|g| g.locked)
         );
         println!(
             "setup_has_stackup: {:?}",
