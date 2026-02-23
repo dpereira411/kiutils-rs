@@ -1206,8 +1206,10 @@ fn parse_title_block_summary(node: &Node) -> PcbTitleBlockSummary {
                 Some("rev") => revision = second_atom_string(child),
                 Some("company") => company = second_atom_string(child),
                 Some("comment") => {
-                    if let Some(comment) = second_atom_string(child) {
-                        comments.push(comment);
+                    if let Node::List { items: inner, .. } = child {
+                        if let Some(comment) = inner.get(2).and_then(atom_as_string) {
+                            comments.push(comment);
+                        }
                     }
                 }
                 _ => {}
@@ -1512,6 +1514,13 @@ mod tests {
         assert_eq!(
             doc.ast().title_block.as_ref().map(|t| t.comments.len()),
             Some(2)
+        );
+        assert_eq!(
+            doc.ast()
+                .title_block
+                .as_ref()
+                .and_then(|t| t.comments.first().cloned()),
+            Some("c1".to_string())
         );
         assert_eq!(doc.ast().setup.as_ref().map(|s| s.has_stackup), Some(true));
         assert_eq!(doc.ast().setup.as_ref().map(|s| s.stackup_layer_count), Some(2));
