@@ -450,6 +450,7 @@ fn inspect_footprint(opts: &Opts) -> Result<(), String> {
                 "tags": doc.ast().tags,
                 "property_count": doc.ast().property_count,
                 "attr_present": doc.ast().attr_present,
+                "locked_present": doc.ast().locked_present,
                 "private_layers_present": doc.ast().private_layers_present,
                 "net_tie_pad_groups_present": doc.ast().net_tie_pad_groups_present,
                 "embedded_fonts_present": doc.ast().embedded_fonts_present,
@@ -482,6 +483,7 @@ fn inspect_footprint(opts: &Opts) -> Result<(), String> {
         println!("tags: {:?}", doc.ast().tags);
         println!("property_count: {}", doc.ast().property_count);
         println!("attr_present: {}", doc.ast().attr_present);
+        println!("locked_present: {}", doc.ast().locked_present);
         println!(
             "private_layers_present: {}",
             doc.ast().private_layers_present
