@@ -250,3 +250,9 @@ cargo run -p kiutils_kicad --example worksheet_corpus_roundtrip -- ~/Engineering
 ## License
 
 MIT
+
+## Future Work
+
+- Avoiding full-file canonical rewrites for targeted mutations is currently achieved for tested targeted single-node edits (for example `version`, `generator`, `title`) with local diffs instead of whole-file churn.
+- Beyond that tested scope, behavior is not yet broadly validated across all mutation patterns.
+- Further expansion of targeted span-patch coverage can be explored.
