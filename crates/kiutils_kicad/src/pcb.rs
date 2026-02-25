@@ -294,6 +294,7 @@ pub struct PcbDocument {
     ast: PcbAst,
     cst: CstDocument,
     diagnostics: Vec<Diagnostic>,
+    ast_dirty: bool,
 }
 
 impl PcbDocument {
@@ -302,6 +303,7 @@ impl PcbDocument {
     }
 
     pub fn ast_mut(&mut self) -> &mut PcbAst {
+        self.ast_dirty = true;
         &mut self.ast
     }
 
@@ -411,6 +413,11 @@ impl PcbDocument {
     }
 
     pub fn write_mode<P: AsRef<Path>>(&self, path: P, mode: WriteMode) -> Result<(), Error> {
+        if self.ast_dirty {
+            return Err(Error::Validation(
+                "ast_mut changes are not serializable; use document setter APIs".to_string(),
+            ));
+        }
         match mode {
             WriteMode::Lossless => fs::write(path, self.cst.to_lossless_string())?,
             WriteMode::Canonical => fs::write(path, self.cst.to_canonical_string())?,
@@ -430,6 +437,7 @@ impl PcbDocument {
             parse_ast,
             |_cst, ast| collect_diagnostics(ast.version),
         );
+        self.ast_dirty = false;
         self
     }
 }
@@ -449,6 +457,7 @@ impl PcbFile {
             ast,
             cst,
             diagnostics,
+            ast_dirty: false,
         })
     }
 }
@@ -1718,6 +1727,28 @@ mod tests {
         doc.write(&out).expect("write");
         let written = fs::read_to_string(&out).expect("read out");
         assert_eq!(written, src);
+
+        let _ = fs::remove_file(path);
+        let _ = fs::remove_file(out);
+    }
+
+    #[test]
+    fn ast_mut_write_returns_validation_error() {
+        let path = tmp_file("pcb_ast_mut_write_error");
+        let src = "(kicad_pcb (version 20241229) (generator pcbnew))\n";
+        fs::write(&path, src).expect("write fixture");
+
+        let mut doc = PcbFile::read(&path).expect("read");
+        doc.ast_mut().version = Some(20260101);
+
+        let out = tmp_file("pcb_ast_mut_write_error_out");
+        let err = doc.write(&out).expect_err("write should fail");
+        match err {
+            Error::Validation(msg) => {
+                assert!(msg.contains("ast_mut changes are not serializable"));
+            }
+            _ => panic!("expected validation error"),
+        }
 
         let _ = fs::remove_file(path);
         let _ = fs::remove_file(out);

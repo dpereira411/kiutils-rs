@@ -101,6 +101,7 @@ pub struct SchematicDocument {
     ast: SchematicAst,
     cst: CstDocument,
     diagnostics: Vec<Diagnostic>,
+    ast_dirty: bool,
 }
 
 impl SchematicDocument {
@@ -109,6 +110,7 @@ impl SchematicDocument {
     }
 
     pub fn ast_mut(&mut self) -> &mut SchematicAst {
+        self.ast_dirty = true;
         &mut self.ast
     }
 
@@ -214,6 +216,11 @@ impl SchematicDocument {
     }
 
     pub fn write_mode<P: AsRef<Path>>(&self, path: P, mode: WriteMode) -> Result<(), Error> {
+        if self.ast_dirty {
+            return Err(Error::Validation(
+                "ast_mut changes are not serializable; use document setter APIs".to_string(),
+            ));
+        }
         match mode {
             WriteMode::Lossless => fs::write(path, self.cst.to_lossless_string())?,
             WriteMode::Canonical => fs::write(path, self.cst.to_canonical_string())?,
@@ -233,6 +240,7 @@ impl SchematicDocument {
             parse_ast,
             |_cst, ast| collect_version_diagnostics(ast.version),
         );
+        self.ast_dirty = false;
         self
     }
 }
@@ -250,6 +258,7 @@ impl SchematicFile {
             ast,
             cst,
             diagnostics,
+            ast_dirty: false,
         })
     }
 }

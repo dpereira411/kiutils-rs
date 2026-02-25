@@ -57,6 +57,7 @@ pub struct LibTableDocument {
     ast: LibTableAst,
     cst: CstDocument,
     diagnostics: Vec<Diagnostic>,
+    ast_dirty: bool,
 }
 
 pub type FpLibTableDocument = LibTableDocument;
@@ -68,6 +69,7 @@ impl LibTableDocument {
     }
 
     pub fn ast_mut(&mut self) -> &mut LibTableAst {
+        self.ast_dirty = true;
         &mut self.ast
     }
 
@@ -155,6 +157,11 @@ impl LibTableDocument {
     }
 
     pub fn write_mode<P: AsRef<Path>>(&self, path: P, mode: WriteMode) -> Result<(), Error> {
+        if self.ast_dirty {
+            return Err(Error::Validation(
+                "ast_mut changes are not serializable; use document setter APIs".to_string(),
+            ));
+        }
         match mode {
             WriteMode::Lossless => fs::write(path, self.cst.to_lossless_string())?,
             WriteMode::Canonical => fs::write(path, self.cst.to_canonical_string())?,
@@ -175,6 +182,7 @@ impl LibTableDocument {
             |cst| parse_ast(cst, kind),
             |_cst, _ast| Vec::new(),
         );
+        self.ast_dirty = false;
         self
     }
 }
@@ -203,6 +211,7 @@ fn read_kind<P: AsRef<Path>>(path: P, kind: LibTableKind) -> Result<LibTableDocu
         ast,
         cst,
         diagnostics: Vec::new(),
+        ast_dirty: false,
     })
 }
 

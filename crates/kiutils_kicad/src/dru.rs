@@ -37,6 +37,7 @@ pub struct DesignRulesDocument {
     ast: DesignRulesAst,
     cst: CstDocument,
     diagnostics: Vec<Diagnostic>,
+    ast_dirty: bool,
 }
 
 impl DesignRulesDocument {
@@ -45,6 +46,7 @@ impl DesignRulesDocument {
     }
 
     pub fn ast_mut(&mut self) -> &mut DesignRulesAst {
+        self.ast_dirty = true;
         &mut self.ast
     }
 
@@ -190,6 +192,11 @@ impl DesignRulesDocument {
     }
 
     pub fn write_mode<P: AsRef<Path>>(&self, path: P, mode: WriteMode) -> Result<(), Error> {
+        if self.ast_dirty {
+            return Err(Error::Validation(
+                "ast_mut changes are not serializable; use document setter APIs".to_string(),
+            ));
+        }
         match mode {
             WriteMode::Lossless => fs::write(path, self.cst.to_lossless_string())?,
             WriteMode::Canonical => fs::write(path, self.cst.to_canonical_string())?,
@@ -209,6 +216,7 @@ impl DesignRulesDocument {
             parse_ast,
             |_cst, ast| collect_diagnostics(ast.version),
         );
+        self.ast_dirty = false;
         self
     }
 }
@@ -226,6 +234,7 @@ impl DesignRulesFile {
             ast,
             cst,
             diagnostics,
+            ast_dirty: false,
         })
     }
 }

@@ -46,6 +46,7 @@ pub struct WorksheetDocument {
     ast: WorksheetAst,
     cst: CstDocument,
     diagnostics: Vec<Diagnostic>,
+    ast_dirty: bool,
 }
 
 impl WorksheetDocument {
@@ -54,6 +55,7 @@ impl WorksheetDocument {
     }
 
     pub fn ast_mut(&mut self) -> &mut WorksheetAst {
+        self.ast_dirty = true;
         &mut self.ast
     }
 
@@ -116,6 +118,11 @@ impl WorksheetDocument {
     }
 
     pub fn write_mode<P: AsRef<Path>>(&self, path: P, mode: WriteMode) -> Result<(), Error> {
+        if self.ast_dirty {
+            return Err(Error::Validation(
+                "ast_mut changes are not serializable; use document setter APIs".to_string(),
+            ));
+        }
         match mode {
             WriteMode::Lossless => fs::write(path, self.cst.to_lossless_string())?,
             WriteMode::Canonical => fs::write(path, self.cst.to_canonical_string())?,
@@ -135,6 +142,7 @@ impl WorksheetDocument {
             parse_ast,
             |cst, ast| collect_diagnostics(cst, ast.version),
         );
+        self.ast_dirty = false;
         self
     }
 }
@@ -152,6 +160,7 @@ impl WorksheetFile {
             ast,
             cst,
             diagnostics,
+            ast_dirty: false,
         })
     }
 }

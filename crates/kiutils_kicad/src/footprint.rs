@@ -61,6 +61,7 @@ pub struct FootprintDocument {
     ast: FootprintAst,
     cst: CstDocument,
     diagnostics: Vec<Diagnostic>,
+    ast_dirty: bool,
 }
 
 impl FootprintDocument {
@@ -69,6 +70,7 @@ impl FootprintDocument {
     }
 
     pub fn ast_mut(&mut self) -> &mut FootprintAst {
+        self.ast_dirty = true;
         &mut self.ast
     }
 
@@ -161,6 +163,11 @@ impl FootprintDocument {
     }
 
     pub fn write_mode<P: AsRef<Path>>(&self, path: P, mode: WriteMode) -> Result<(), Error> {
+        if self.ast_dirty {
+            return Err(Error::Validation(
+                "ast_mut changes are not serializable; use document setter APIs".to_string(),
+            ));
+        }
         match mode {
             WriteMode::Lossless => fs::write(path, self.cst.to_lossless_string())?,
             WriteMode::Canonical => fs::write(path, self.cst.to_canonical_string())?,
@@ -180,6 +187,7 @@ impl FootprintDocument {
             parse_ast,
             |cst, ast| collect_diagnostics(cst, ast.version),
         );
+        self.ast_dirty = false;
         self
     }
 }
@@ -197,6 +205,7 @@ impl FootprintFile {
             ast,
             cst,
             diagnostics,
+            ast_dirty: false,
         })
     }
 }

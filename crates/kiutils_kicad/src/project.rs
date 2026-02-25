@@ -19,6 +19,7 @@ pub struct ProjectDocument {
     ast: ProjectAst,
     raw: String,
     json: Value,
+    ast_dirty: bool,
 }
 
 impl ProjectDocument {
@@ -27,6 +28,7 @@ impl ProjectDocument {
     }
 
     pub fn ast_mut(&mut self) -> &mut ProjectAst {
+        self.ast_dirty = true;
         &mut self.ast
     }
 
@@ -43,6 +45,11 @@ impl ProjectDocument {
     }
 
     pub fn write_mode<P: AsRef<Path>>(&self, path: P, mode: WriteMode) -> Result<(), Error> {
+        if self.ast_dirty {
+            return Err(Error::Validation(
+                "ast_mut changes are not serializable; use document setter APIs".to_string(),
+            ));
+        }
         match mode {
             WriteMode::Lossless => fs::write(path, &self.raw)?,
             WriteMode::Canonical => {
@@ -112,6 +119,7 @@ impl ProjectFile {
             },
             raw,
             json,
+            ast_dirty: false,
         })
     }
 }
@@ -169,5 +177,31 @@ mod tests {
         assert_eq!(doc.ast().unknown_fields[0].key, "custom_top");
 
         let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn ast_mut_write_returns_validation_error() {
+        let path = tmp_file("pro_ast_mut_write_error");
+        let src = r#"{
+  "meta": { "version": 3 },
+  "libraries": { "pinned_footprint_libs": ["A"] }
+}
+"#;
+        fs::write(&path, src).expect("write fixture");
+
+        let mut doc = ProjectFile::read(&path).expect("read");
+        doc.ast_mut().meta_version = Some(4);
+
+        let out = tmp_file("pro_ast_mut_write_error_out");
+        let err = doc.write(&out).expect_err("write should fail");
+        match err {
+            Error::Validation(msg) => {
+                assert!(msg.contains("ast_mut changes are not serializable"));
+            }
+            _ => panic!("expected validation error"),
+        }
+
+        let _ = fs::remove_file(path);
+        let _ = fs::remove_file(out);
     }
 }
