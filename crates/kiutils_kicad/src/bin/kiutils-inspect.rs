@@ -1172,6 +1172,11 @@ fn inspect_dru(opts: &Opts) -> Result<(), String> {
     if opts.show_cst {
         println!("--- cst (lossless) ---\n{}", doc.cst().to_lossless_string());
     }
+    if opts.show_diagnostics {
+        for d in doc.diagnostics() {
+            println!("diagnostic: [{:?}] {} {}", d.severity, d.code, d.message);
+        }
+    }
     if opts.show_canonical {
         let out = temp_out("inspect_dru", "kicad_dru");
         doc.write_mode(&out, WriteMode::Canonical)
@@ -1228,6 +1233,26 @@ fn dru_fields(doc: &kiutils_kicad::DesignRulesDocument) -> Vec<InspectField> {
     vec![
         field("version", json!(ast.version), format!("{:?}", ast.version)),
         field(
+            "total_constraint_count",
+            json!(ast.total_constraint_count),
+            ast.total_constraint_count.to_string(),
+        ),
+        field(
+            "rules_with_condition_count",
+            json!(ast.rules_with_condition_count),
+            ast.rules_with_condition_count.to_string(),
+        ),
+        field(
+            "rules_with_layer_count",
+            json!(ast.rules_with_layer_count),
+            ast.rules_with_layer_count.to_string(),
+        ),
+        field(
+            "first_rule_name",
+            json!(ast.rules.first().and_then(|r| r.name.clone())),
+            format!("{:?}", ast.rules.first().and_then(|r| r.name.clone())),
+        ),
+        field(
             "rule_count",
             json!(ast.rule_count),
             ast.rule_count.to_string(),
@@ -1236,6 +1261,11 @@ fn dru_fields(doc: &kiutils_kicad::DesignRulesDocument) -> Vec<InspectField> {
             "unknown_count",
             json!(ast.unknown_nodes.len()),
             ast.unknown_nodes.len().to_string(),
+        ),
+        field(
+            "diagnostic_count",
+            json!(doc.diagnostics().len()),
+            doc.diagnostics().len().to_string(),
         ),
     ]
 }

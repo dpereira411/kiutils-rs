@@ -202,8 +202,12 @@ fn inspect_dru_json_contract_smoke() {
         o.get("path"),
         Some(&Value::String(path.to_string_lossy().to_string()))
     );
+    assert_eq!(o.get("first_rule_name"), Some(&Value::from("base")));
     assert_eq!(o.get("rule_count"), Some(&Value::from(1)));
+    assert_eq!(o.get("total_constraint_count"), Some(&Value::from(1)));
+    assert_eq!(o.get("rules_with_condition_count"), Some(&Value::from(1)));
     assert_eq!(o.get("unknown_count"), Some(&Value::from(1)));
+    assert_eq!(o.get("diagnostic_count"), Some(&Value::from(0)));
 }
 
 #[test]
@@ -213,8 +217,11 @@ fn inspect_dru_text_contract_smoke() {
 
     assert!(out.contains("kind: dru"));
     assert!(out.contains(&format!("path: {}", path.display())));
+    assert!(out.contains("first_rule_name: Some(\"base\")"));
     assert!(out.contains("rule_count: 1"));
+    assert!(out.contains("total_constraint_count: 1"));
     assert!(out.contains("unknown_count: 1"));
+    assert!(out.contains("diagnostic_count: 0"));
 }
 
 #[test]

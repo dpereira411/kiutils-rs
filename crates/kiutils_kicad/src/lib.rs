@@ -38,7 +38,7 @@ mod write_mode;
 
 pub use batch::{read_pcbs, read_pcbs_from_refs};
 pub use diagnostic::{Diagnostic, Severity, Span};
-pub use dru::{DesignRulesAst, DesignRulesDocument, DesignRulesFile};
+pub use dru::{DesignRuleSummary, DesignRulesAst, DesignRulesDocument, DesignRulesFile};
 pub use error::Error;
 pub use footprint::{FootprintAst, FootprintDocument, FootprintFile};
 pub use lib_table::{FpLibTableAst, FpLibTableDocument, FpLibTableFile};

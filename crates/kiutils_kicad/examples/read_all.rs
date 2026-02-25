@@ -28,6 +28,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let dru = DesignRulesFile::read(base.join("sample.kicad_dru"))?;
     println!("rules: {}", dru.ast().rule_count);
+    println!("rule constraints: {}", dru.ast().total_constraint_count);
 
     let project = ProjectFile::read(base.join("sample.kicad_pro"))?;
     println!("project meta version: {:?}", project.ast().meta_version);

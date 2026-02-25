@@ -179,6 +179,27 @@ cargo run -p kiutils_kicad --example symbol_roundtrip -- input.kicad_sym output.
 cargo run -p kiutils_kicad --example symbol_corpus_roundtrip -- ~/Engineering/demos crates/kiutils_kicad/examples/generated/symbols
 ```
 
+## Design-rules read/modify/write
+
+```rust
+use kiutils_kicad::DesignRulesFile;
+
+let mut doc = DesignRulesFile::read("input.kicad_dru")?;
+doc.set_version(1)
+    .rename_first_rule("base_rule")
+    .upsert_rule_layer("base_rule", "outer")
+    .upsert_rule_condition("base_rule", "A.NetClass == 'DDR4'");
+
+doc.write("output.kicad_dru")?;
+```
+
+Runnable examples:
+
+```bash
+cargo run -p kiutils_kicad --example dru_roundtrip -- input.kicad_dru output.kicad_dru
+cargo run -p kiutils_kicad --example dru_corpus_roundtrip -- ~/Engineering/demos crates/kiutils_kicad/examples/generated/dru
+```
+
 ## License
 
 MIT

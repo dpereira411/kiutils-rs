@@ -1,4 +1,4 @@
-use kiutils_sexpr::{parse_one, Atom, CstDocument, Node, Span};
+use kiutils_sexpr::{parse_one, parse_rootless, Atom, CstDocument, Node, Span};
 
 use crate::diagnostic::Diagnostic;
 use crate::sexpr_utils::{atom_as_string, head_of};
@@ -252,6 +252,37 @@ pub(crate) fn mutate_root_and_refresh<T, FM, FA, FD>(
     }
 
     canonicalize_and_reparse(cst);
+    *ast = parse_ast(cst);
+    *diagnostics = collect_diagnostics(cst, ast);
+}
+
+pub(crate) fn canonicalize_and_reparse_rootless(cst: &mut CstDocument) {
+    let canonical = cst.to_canonical_string();
+    if let Ok(parsed) = parse_rootless(&canonical) {
+        *cst = parsed;
+    } else {
+        cst.raw = canonical;
+    }
+}
+
+pub(crate) fn mutate_nodes_and_refresh_rootless<T, FM, FA, FD>(
+    cst: &mut CstDocument,
+    ast: &mut T,
+    diagnostics: &mut Vec<Diagnostic>,
+    mutate: FM,
+    parse_ast: FA,
+    collect_diagnostics: FD,
+) where
+    FM: FnOnce(&mut Vec<Node>) -> bool,
+    FA: Fn(&CstDocument) -> T,
+    FD: Fn(&CstDocument, &T) -> Vec<Diagnostic>,
+{
+    let changed = mutate(&mut cst.nodes);
+    if !changed {
+        return;
+    }
+
+    canonicalize_and_reparse_rootless(cst);
     *ast = parse_ast(cst);
     *diagnostics = collect_diagnostics(cst, ast);
 }
