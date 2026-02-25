@@ -17,7 +17,7 @@ Core strategy:
 - API not mirroring Python; Rust-first ergonomic + explicit error/version handling.
 
 ## Why this is better than current `kiutils` baseline
-Observed in `/Users/milindsharma/Developer/kicad-oss/kiutils-rs/kiutils`:
+Observed in `./kiutils`:
 - Parser core is regex + nested Python lists (`src/kiutils/utils/sexpr.py`).
 - Token dispatch is manual `if item[0] == ...` chains (`src/kiutils/board.py`, `/footprint.py`, `/dru.py`, `/libraries.py`).
 - Unknown token handling is weak (generally dropped in typed projection).
@@ -164,3 +164,17 @@ Performance:
 - Library scope: `fp-lib-table` + project pinned footprint libs; exclude `sym-lib-table`.
 - No schematic/symbol/symbol-lib parsing.
 - No expression-evaluator for design-rule conditions in v1 (string-preserving only).
+
+## Simplification policy (locked 2026-02-23)
+- Treat `./kiutils` as read-only reference baseline.
+- Refactor by module scope pressure, not arbitrary line-count thresholds.
+- `*_count` fields on AST are debug convenience, non-normative API.
+- `kiutils-inspect` should prioritize stable machine-readable schema; debug breadth can be opt-in (for example `--verbose`).
+- One inspect schema/key cleanup break is acceptable with changelog + migration note.
+- Parser organization default: table-driven dispatch; trait/macro only where repetition remains high.
+- Keep atom/token helper semantics consistent across file types; file-specific counters are allowed.
+- Keep version policy post-parse by default; early hard-fail only for clearly unsupported mandatory roots.
+- Keep `.kicad_dru` condition parsing string-preserving in v1; typed DSL parsing can be optional later.
+- Unknown-token diagnostics target developer tooling; end-user mode should summarize instead of spamming.
+- Expand integration fixtures before major parser refactors: multi-unknown, malformed-root, future-version.
+- `serde` is preferred for machine outputs (CLI/reporting), while typed Rust API remains primary surface.

@@ -23,6 +23,15 @@ Design goals:
 - Unknown token preservation for forward compatibility
 - Typed API with explicit diagnostics/errors
 
+Implementation policy (locked 2026-02-23):
+- `kiutils/` Python tree is read-only baseline/reference.
+- Simplify by scope/cohesion, not arbitrary file-length splits.
+- AST `*_count` values are debug convenience (non-normative API).
+- `kiutils-inspect` machine schema stability first; debug detail should be opt-in.
+- Version checks stay post-parse by default for compatibility.
+- `.kicad_dru` condition strings stay verbatim in v1.
+- Unknown diagnostics are developer-focused; end-user mode should summarize.
+
 ## Quick start
 
 ```bash

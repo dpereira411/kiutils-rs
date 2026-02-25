@@ -4,6 +4,9 @@ use std::path::Path;
 use kiutils_sexpr::{parse_one, Atom, CstDocument, Node};
 
 use crate::diagnostic::{Diagnostic, Severity};
+use crate::sexpr_utils::{
+    atom_as_string, head_of, list_child_head_count, second_atom_i32, second_atom_string,
+};
 use crate::version::VersionPolicy;
 use crate::{Error, UnknownNode, WriteMode};
 
@@ -277,55 +280,6 @@ fn parse_ast(cst: &CstDocument) -> FootprintAst {
         graphic_count,
         unknown_nodes,
     }
-}
-
-fn head_of(node: &Node) -> Option<&str> {
-    let Node::List { items, .. } = node else {
-        return None;
-    };
-    let Some(Node::Atom {
-        atom: Atom::Symbol(head),
-        ..
-    }) = items.first()
-    else {
-        return None;
-    };
-    Some(head.as_str())
-}
-
-fn atom_as_string(node: &Node) -> Option<String> {
-    match node {
-        Node::Atom {
-            atom: Atom::Symbol(v),
-            ..
-        } => Some(v.clone()),
-        Node::Atom {
-            atom: Atom::Quoted(v),
-            ..
-        } => Some(v.clone()),
-        _ => None,
-    }
-}
-
-fn second_atom_string(node: &Node) -> Option<String> {
-    let Node::List { items, .. } = node else {
-        return None;
-    };
-    items.get(1).and_then(atom_as_string)
-}
-
-fn second_atom_i32(node: &Node) -> Option<i32> {
-    second_atom_string(node).and_then(|s| s.parse::<i32>().ok())
-}
-
-fn list_child_head_count(node: &Node, head: &str) -> usize {
-    let Node::List { items, .. } = node else {
-        return 0;
-    };
-    items
-        .iter()
-        .filter(|child| matches!(head_of(child), Some(h) if h == head))
-        .count()
 }
 
 fn validate_version(version: Option<i32>) -> Result<Vec<Diagnostic>, Error> {

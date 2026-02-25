@@ -4,6 +4,7 @@ use std::path::Path;
 use kiutils_sexpr::{parse_one, Atom, CstDocument, Node};
 
 use crate::diagnostic::{Diagnostic, Severity};
+use crate::sexpr_utils::{atom_as_i32, atom_as_string, head_of, second_atom_i32, second_atom_string};
 use crate::version::VersionPolicy;
 use crate::{Error, UnknownNode, WriteMode};
 
@@ -23,11 +24,28 @@ pub struct PcbNet {
     pub name: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct PcbFootprintSummary {
     pub lib_id: Option<String>,
     pub layer: Option<String>,
+    pub at: Option<[f64; 2]>,
+    pub rotation: Option<f64>,
+    pub uuid: Option<String>,
+    pub property_count: usize,
+    pub pad_count: usize,
+    pub model_count: usize,
+    pub zone_count: usize,
+    pub group_count: usize,
+    pub graphic_count: usize,
+    pub fp_line_count: usize,
+    pub fp_rect_count: usize,
+    pub fp_circle_count: usize,
+    pub fp_arc_count: usize,
+    pub fp_poly_count: usize,
+    pub fp_curve_count: usize,
+    pub fp_text_count: usize,
+    pub fp_text_box_count: usize,
     pub reference: Option<String>,
     pub value: Option<String>,
 }
@@ -40,6 +58,8 @@ pub struct PcbSegmentSummary {
     pub width: Option<f64>,
     pub layer: Option<String>,
     pub net: Option<i32>,
+    pub uuid: Option<String>,
+    pub locked: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -51,6 +71,8 @@ pub struct PcbArcSummary {
     pub width: Option<f64>,
     pub layer: Option<String>,
     pub net: Option<i32>,
+    pub uuid: Option<String>,
+    pub locked: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -59,9 +81,14 @@ pub struct PcbViaSummary {
     pub at: Option<[f64; 2]>,
     pub size: Option<f64>,
     pub drill: Option<f64>,
+    pub drill_x: Option<f64>,
+    pub drill_y: Option<f64>,
+    pub drill_shape: Option<String>,
     pub net: Option<i32>,
     pub via_type: Option<String>,
     pub layers: Vec<String>,
+    pub uuid: Option<String>,
+    pub locked: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -126,6 +153,8 @@ pub struct PcbGraphicSummary {
     pub start: Option<[f64; 2]>,
     pub end: Option<[f64; 2]>,
     pub center: Option<[f64; 2]>,
+    pub uuid: Option<String>,
+    pub locked: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -150,6 +179,32 @@ pub struct PcbSetupSummary {
 
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct PcbGeneralSummary {
+    pub thickness: Option<f64>,
+    pub legacy_teardrops: Option<bool>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct PcbPaperSummary {
+    pub kind: Option<String>,
+    pub width: Option<f64>,
+    pub height: Option<f64>,
+    pub orientation: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct PcbTitleBlockSummary {
+    pub title: Option<String>,
+    pub date: Option<String>,
+    pub revision: Option<String>,
+    pub company: Option<String>,
+    pub comments: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct PcbAst {
     pub version: Option<i32>,
     pub generator: Option<String>,
@@ -157,6 +212,9 @@ pub struct PcbAst {
     pub has_general: bool,
     pub has_paper: bool,
     pub has_title_block: bool,
+    pub general: Option<PcbGeneralSummary>,
+    pub paper: Option<PcbPaperSummary>,
+    pub title_block: Option<PcbTitleBlockSummary>,
     pub has_setup: bool,
     pub setup: Option<PcbSetupSummary>,
     pub has_embedded_fonts: bool,
@@ -287,6 +345,9 @@ fn parse_ast(cst: &CstDocument) -> PcbAst {
     let mut has_general = false;
     let mut has_paper = false;
     let mut has_title_block = false;
+    let mut general = None;
+    let mut paper = None;
+    let mut title_block = None;
     let mut has_setup = false;
     let mut setup = None;
     let mut has_embedded_fonts = false;
@@ -343,9 +404,18 @@ fn parse_ast(cst: &CstDocument) -> PcbAst {
                 Some("generator_version") => {
                     generator_version = second_atom_string(item);
                 }
-                Some("general") => has_general = true,
-                Some("paper") => has_paper = true,
-                Some("title_block") => has_title_block = true,
+                Some("general") => {
+                    has_general = true;
+                    general = Some(parse_general_summary(item));
+                }
+                Some("paper") => {
+                    has_paper = true;
+                    paper = Some(parse_paper_summary(item));
+                }
+                Some("title_block") => {
+                    has_title_block = true;
+                    title_block = Some(parse_title_block_summary(item));
+                }
                 Some("layers") => {
                     if let Node::List { items: inner, .. } = item {
                         layers = parse_layers(inner);
@@ -472,6 +542,9 @@ fn parse_ast(cst: &CstDocument) -> PcbAst {
         has_general,
         has_paper,
         has_title_block,
+        general,
+        paper,
+        title_block,
         has_setup,
         setup,
         has_embedded_fonts,
@@ -515,37 +588,6 @@ fn parse_ast(cst: &CstDocument) -> PcbAst {
     }
 }
 
-fn head_of(node: &Node) -> Option<&str> {
-    let Node::List { items, .. } = node else {
-        return None;
-    };
-    let Some(Node::Atom {
-        atom: Atom::Symbol(head),
-        ..
-    }) = items.first()
-    else {
-        return None;
-    };
-    Some(head.as_str())
-}
-
-fn second_atom_string(node: &Node) -> Option<String> {
-    let Node::List { items, .. } = node else {
-        return None;
-    };
-    match items.get(1) {
-        Some(Node::Atom {
-            atom: Atom::Symbol(v),
-            ..
-        }) => Some(v.clone()),
-        Some(Node::Atom {
-            atom: Atom::Quoted(v),
-            ..
-        }) => Some(v.clone()),
-        _ => None,
-    }
-}
-
 fn parse_layers(items: &[Node]) -> Vec<PcbLayer> {
     let mut out = Vec::new();
     for entry in items.iter().skip(1) {
@@ -583,6 +625,23 @@ fn parse_footprint_summary(node: &Node) -> PcbFootprintSummary {
         return PcbFootprintSummary {
             lib_id: None,
             layer: None,
+            at: None,
+            rotation: None,
+            uuid: None,
+            property_count: 0,
+            pad_count: 0,
+            model_count: 0,
+            zone_count: 0,
+            group_count: 0,
+            graphic_count: 0,
+            fp_line_count: 0,
+            fp_rect_count: 0,
+            fp_circle_count: 0,
+            fp_arc_count: 0,
+            fp_poly_count: 0,
+            fp_curve_count: 0,
+            fp_text_count: 0,
+            fp_text_box_count: 0,
             reference: None,
             value: None,
         };
@@ -590,6 +649,23 @@ fn parse_footprint_summary(node: &Node) -> PcbFootprintSummary {
 
     let lib_id = items.get(1).and_then(atom_as_string);
     let mut layer = None;
+    let mut at = None;
+    let mut rotation = None;
+    let mut uuid = None;
+    let mut property_count = 0usize;
+    let mut pad_count = 0usize;
+    let mut model_count = 0usize;
+    let mut zone_count = 0usize;
+    let mut group_count = 0usize;
+    let mut graphic_count = 0usize;
+    let mut fp_line_count = 0usize;
+    let mut fp_rect_count = 0usize;
+    let mut fp_circle_count = 0usize;
+    let mut fp_arc_count = 0usize;
+    let mut fp_poly_count = 0usize;
+    let mut fp_curve_count = 0usize;
+    let mut fp_text_count = 0usize;
+    let mut fp_text_box_count = 0usize;
     let mut reference = None;
     let mut value = None;
 
@@ -601,7 +677,14 @@ fn parse_footprint_summary(node: &Node) -> PcbFootprintSummary {
             "layer" => {
                 layer = second_atom_string(child);
             }
+            "at" => {
+                let (xy, rot) = parse_xy_and_angle(child);
+                at = xy;
+                rotation = rot;
+            }
+            "uuid" => uuid = second_atom_string(child),
             "property" => {
+                property_count += 1;
                 let Node::List { items: props, .. } = child else {
                     continue;
                 };
@@ -613,6 +696,42 @@ fn parse_footprint_summary(node: &Node) -> PcbFootprintSummary {
                     _ => {}
                 }
             }
+            "pad" => pad_count += 1,
+            "model" => model_count += 1,
+            "zone" => zone_count += 1,
+            "group" => group_count += 1,
+            "fp_line" => {
+                graphic_count += 1;
+                fp_line_count += 1;
+            }
+            "fp_rect" => {
+                graphic_count += 1;
+                fp_rect_count += 1;
+            }
+            "fp_circle" => {
+                graphic_count += 1;
+                fp_circle_count += 1;
+            }
+            "fp_arc" => {
+                graphic_count += 1;
+                fp_arc_count += 1;
+            }
+            "fp_poly" => {
+                graphic_count += 1;
+                fp_poly_count += 1;
+            }
+            "fp_curve" => {
+                graphic_count += 1;
+                fp_curve_count += 1;
+            }
+            "fp_text" => {
+                graphic_count += 1;
+                fp_text_count += 1;
+            }
+            "fp_text_box" => {
+                graphic_count += 1;
+                fp_text_box_count += 1;
+            }
             _ => {}
         }
     }
@@ -620,6 +739,23 @@ fn parse_footprint_summary(node: &Node) -> PcbFootprintSummary {
     PcbFootprintSummary {
         lib_id,
         layer,
+        at,
+        rotation,
+        uuid,
+        property_count,
+        pad_count,
+        model_count,
+        zone_count,
+        group_count,
+        graphic_count,
+        fp_line_count,
+        fp_rect_count,
+        fp_circle_count,
+        fp_arc_count,
+        fp_poly_count,
+        fp_curve_count,
+        fp_text_count,
+        fp_text_box_count,
         reference,
         value,
     }
@@ -631,7 +767,12 @@ fn parse_segment_summary(node: &Node) -> PcbSegmentSummary {
     let mut width = None;
     let mut layer = None;
     let mut net = None;
+    let mut uuid = None;
+    let mut locked = false;
     if let Node::List { items, .. } = node {
+        locked = items
+            .iter()
+            .any(|n| matches!(n, Node::Atom { atom: Atom::Symbol(s), .. } if s == "locked"));
         for child in items.iter().skip(1) {
             match head_of(child) {
                 Some("start") => start = parse_xy(child),
@@ -639,6 +780,8 @@ fn parse_segment_summary(node: &Node) -> PcbSegmentSummary {
                 Some("width") => width = second_atom_f64(child),
                 Some("layer") => layer = second_atom_string(child),
                 Some("net") => net = second_atom_i32(child),
+                Some("uuid") => uuid = second_atom_string(child),
+                Some("locked") => locked = true,
                 _ => {}
             }
         }
@@ -649,6 +792,8 @@ fn parse_segment_summary(node: &Node) -> PcbSegmentSummary {
         width,
         layer,
         net,
+        uuid,
+        locked,
     }
 }
 
@@ -659,7 +804,12 @@ fn parse_arc_summary(node: &Node) -> PcbArcSummary {
     let mut width = None;
     let mut layer = None;
     let mut net = None;
+    let mut uuid = None;
+    let mut locked = false;
     if let Node::List { items, .. } = node {
+        locked = items
+            .iter()
+            .any(|n| matches!(n, Node::Atom { atom: Atom::Symbol(s), .. } if s == "locked"));
         for child in items.iter().skip(1) {
             match head_of(child) {
                 Some("start") => start = parse_xy(child),
@@ -668,6 +818,8 @@ fn parse_arc_summary(node: &Node) -> PcbArcSummary {
                 Some("width") => width = second_atom_f64(child),
                 Some("layer") => layer = second_atom_string(child),
                 Some("net") => net = second_atom_i32(child),
+                Some("uuid") => uuid = second_atom_string(child),
+                Some("locked") => locked = true,
                 _ => {}
             }
         }
@@ -679,6 +831,8 @@ fn parse_arc_summary(node: &Node) -> PcbArcSummary {
         width,
         layer,
         net,
+        uuid,
+        locked,
     }
 }
 
@@ -686,9 +840,14 @@ fn parse_via_summary(node: &Node) -> PcbViaSummary {
     let mut at = None;
     let mut size = None;
     let mut drill = None;
+    let mut drill_x = None;
+    let mut drill_y = None;
+    let mut drill_shape = None;
     let mut net = None;
     let mut via_type = None;
     let mut layers = Vec::new();
+    let mut uuid = None;
+    let mut locked = false;
     if let Node::List { items, .. } = node {
         // Some formats encode via type as second symbol: (via blind ...)
         via_type = items.get(1).and_then(|n| match n {
@@ -698,17 +857,39 @@ fn parse_via_summary(node: &Node) -> PcbViaSummary {
             } if matches!(s.as_str(), "blind" | "micro" | "through") => Some(s.clone()),
             _ => None,
         });
+        locked = items
+            .iter()
+            .any(|n| matches!(n, Node::Atom { atom: Atom::Symbol(s), .. } if s == "locked"));
         for child in items.iter().skip(1) {
             match head_of(child) {
                 Some("at") => at = parse_xy(child),
                 Some("size") => size = second_atom_f64(child),
-                Some("drill") => drill = second_atom_f64(child),
+                Some("drill") => {
+                    drill = second_atom_f64(child);
+                    if let Node::List {
+                        items: drill_items, ..
+                    } = child
+                    {
+                        if let Some(shape) = drill_items.get(1).and_then(atom_as_string) {
+                            if shape.parse::<f64>().is_err() {
+                                drill_shape = Some(shape);
+                                drill_x = drill_items.get(2).and_then(atom_as_f64);
+                                drill_y = drill_items.get(3).and_then(atom_as_f64);
+                            } else {
+                                drill_x = drill_items.get(1).and_then(atom_as_f64);
+                                drill_y = drill_items.get(2).and_then(atom_as_f64);
+                            }
+                        }
+                    }
+                }
                 Some("net") => net = second_atom_i32(child),
                 Some("layers") => {
                     if let Node::List { items: inner, .. } = child {
                         layers = inner.iter().skip(1).filter_map(atom_as_string).collect();
                     }
                 }
+                Some("uuid") => uuid = second_atom_string(child),
+                Some("locked") => locked = true,
                 _ => {}
             }
         }
@@ -717,9 +898,14 @@ fn parse_via_summary(node: &Node) -> PcbViaSummary {
         at,
         size,
         drill,
+        drill_x,
+        drill_y,
+        drill_shape,
         net,
         via_type,
         layers,
+        uuid,
+        locked,
     }
 }
 
@@ -889,16 +1075,23 @@ fn parse_graphic_summary(node: &Node, token: &str) -> PcbGraphicSummary {
     let mut start = None;
     let mut end = None;
     let mut center = None;
+    let mut uuid = None;
+    let mut locked = false;
 
     if let Node::List { items, .. } = node {
         // For gr_text / gr_text_box, second token may be the text content.
         text = items.get(1).and_then(atom_as_string);
+        locked = items
+            .iter()
+            .any(|n| matches!(n, Node::Atom { atom: Atom::Symbol(s), .. } if s == "locked"));
         for child in items.iter().skip(1) {
             match head_of(child) {
                 Some("layer") => layer = second_atom_string(child),
                 Some("start") => start = parse_xy(child),
                 Some("end") => end = parse_xy(child),
                 Some("center") => center = parse_xy(child),
+                Some("uuid") => uuid = second_atom_string(child),
+                Some("locked") => locked = true,
                 _ => {}
             }
         }
@@ -911,6 +1104,8 @@ fn parse_graphic_summary(node: &Node, token: &str) -> PcbGraphicSummary {
         start,
         end,
         center,
+        uuid,
+        locked,
     }
 }
 
@@ -924,6 +1119,86 @@ fn parse_property(node: &Node) -> Option<PcbProperty> {
     let key = items.get(1).and_then(atom_as_string)?;
     let value = items.get(2).and_then(atom_as_string)?;
     Some(PcbProperty { key, value })
+}
+
+fn parse_general_summary(node: &Node) -> PcbGeneralSummary {
+    let mut thickness = None;
+    let mut legacy_teardrops = None;
+    if let Node::List { items, .. } = node {
+        for child in items.iter().skip(1) {
+            match head_of(child) {
+                Some("thickness") => thickness = second_atom_f64(child),
+                Some("legacy_teardrops") => legacy_teardrops = second_atom_bool(child),
+                _ => {}
+            }
+        }
+    }
+    PcbGeneralSummary {
+        thickness,
+        legacy_teardrops,
+    }
+}
+
+fn parse_paper_summary(node: &Node) -> PcbPaperSummary {
+    let Node::List { items, .. } = node else {
+        return PcbPaperSummary {
+            kind: None,
+            width: None,
+            height: None,
+            orientation: None,
+        };
+    };
+
+    let kind = items.get(1).and_then(atom_as_string);
+    let width = items.get(2).and_then(atom_as_f64);
+    let height = items.get(3).and_then(atom_as_f64);
+    let orientation = match items.get(2) {
+        Some(Node::Atom {
+            atom: Atom::Symbol(text),
+            ..
+        }) if text == "portrait" || text == "landscape" => Some(text.clone()),
+        _ => items.get(4).and_then(atom_as_string),
+    };
+
+    PcbPaperSummary {
+        kind,
+        width,
+        height,
+        orientation,
+    }
+}
+
+fn parse_title_block_summary(node: &Node) -> PcbTitleBlockSummary {
+    let mut title = None;
+    let mut date = None;
+    let mut revision = None;
+    let mut company = None;
+    let mut comments = Vec::new();
+    if let Node::List { items, .. } = node {
+        for child in items.iter().skip(1) {
+            match head_of(child) {
+                Some("title") => title = second_atom_string(child),
+                Some("date") => date = second_atom_string(child),
+                Some("rev") => revision = second_atom_string(child),
+                Some("company") => company = second_atom_string(child),
+                Some("comment") => {
+                    if let Node::List { items: inner, .. } = child {
+                        if let Some(comment) = inner.get(2).and_then(atom_as_string) {
+                            comments.push(comment);
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    PcbTitleBlockSummary {
+        title,
+        date,
+        revision,
+        company,
+        comments,
+    }
 }
 
 fn parse_setup_summary(node: &Node) -> PcbSetupSummary {
@@ -973,26 +1248,8 @@ fn parse_setup_summary(node: &Node) -> PcbSetupSummary {
     }
 }
 
-fn atom_as_string(node: &Node) -> Option<String> {
-    match node {
-        Node::Atom {
-            atom: Atom::Symbol(v),
-            ..
-        } => Some(v.clone()),
-        Node::Atom {
-            atom: Atom::Quoted(v),
-            ..
-        } => Some(v.clone()),
-        _ => None,
-    }
-}
-
-fn atom_as_i32(node: &Node) -> Option<i32> {
-    atom_as_string(node).and_then(|s| s.parse::<i32>().ok())
-}
-
-fn second_atom_i32(node: &Node) -> Option<i32> {
-    second_atom_string(node).and_then(|s| s.parse::<i32>().ok())
+fn atom_as_f64(node: &Node) -> Option<f64> {
+    atom_as_string(node).and_then(|s| s.parse::<f64>().ok())
 }
 
 fn second_atom_f64(node: &Node) -> Option<f64> {
@@ -1014,6 +1271,19 @@ fn parse_xy(node: &Node) -> Option<[f64; 2]> {
     let x = items.get(1).and_then(atom_as_string)?.parse::<f64>().ok()?;
     let y = items.get(2).and_then(atom_as_string)?.parse::<f64>().ok()?;
     Some([x, y])
+}
+
+fn parse_xy_and_angle(node: &Node) -> (Option<[f64; 2]>, Option<f64>) {
+    let Node::List { items, .. } = node else {
+        return (None, None);
+    };
+    let x = items.get(1).and_then(atom_as_f64);
+    let y = items.get(2).and_then(atom_as_f64);
+    let rot = items.get(3).and_then(atom_as_f64);
+    match (x, y) {
+        (Some(x), Some(y)) => (Some([x, y]), rot),
+        _ => (None, rot),
+    }
 }
 
 fn validate_version(version: Option<i32>) -> Result<Vec<Diagnostic>, Error> {
@@ -1157,7 +1427,7 @@ mod tests {
     #[test]
     fn parses_top_level_counts() {
         let path = tmp_file("pcb_counts");
-        let src = "(kicad_pcb (version 20260101) (generator pcbnew)\n  (property \"Owner\" \"Milind\")\n  (layers (0 F.Cu signal) (31 B.Cu signal))\n  (setup (stackup (layer \"F.Cu\" (type \"copper\")) (layer \"B.Cu\" (type \"copper\"))) (pcbplotparams) (pad_to_mask_clearance 0.1) (solder_mask_min_width 0.0) (aux_axis_origin 10 20) (grid_origin 11 21))\n  (net 0 \"\")\n  (footprint \"R_0603\")\n  (gr_line (start 0 0) (end 1 1))\n  (segment (start 0 0) (end 1 1) (width 0.25) (layer F.Cu) (net 0))\n  (via (at 0 0) (size 1) (drill 0.5) (layers F.Cu B.Cu))\n  (zone)\n  (dimension aligned (layer F.Cu) (gr_text \"1.0\" (at 0 0)))\n  (target plus (at 1 2) (size 1) (width 0.1) (layer F.Cu))\n  (group (name \"G\") (id \"abc\") (members \"u1\" \"u2\"))\n)\n";
+        let src = "(kicad_pcb (version 20260101) (generator pcbnew)\n  (general (thickness 1.6) (legacy_teardrops no))\n  (paper \"User\" 100 80 portrait)\n  (title_block (title \"Demo\") (date \"2026-02-23\") (rev \"A\") (company \"Milind\") (comment 1 \"c1\") (comment 2 \"c2\"))\n  (property \"Owner\" \"Milind\")\n  (layers (0 F.Cu signal) (31 B.Cu signal))\n  (setup (stackup (layer \"F.Cu\" (type \"copper\")) (layer \"B.Cu\" (type \"copper\"))) (pcbplotparams) (pad_to_mask_clearance 0.1) (solder_mask_min_width 0.0) (aux_axis_origin 10 20) (grid_origin 11 21))\n  (net 0 \"\")\n  (footprint \"R_0603\"\n    (at 10 20 90)\n    (layer F.Cu)\n    (uuid \"fp-1\")\n    (property \"Reference\" \"R1\")\n    (property \"Value\" \"1k\")\n    (fp_line (start 0 0) (end 1 1) (layer F.SilkS))\n    (fp_text reference \"R1\" (at 0 0) (layer F.SilkS))\n    (pad \"1\" smd rect (at 0 0) (size 1 1) (layers F.Cu F.Mask))\n    (model \"r.step\")\n  )\n  (gr_line locked (start 0 0) (end 1 1) (layer F.Cu) (uuid \"g-1\"))\n  (segment locked (start 0 0) (end 1 1) (width 0.25) (layer F.Cu) (net 0) (uuid \"s-1\"))\n  (arc (start 0 0) (mid 0.5 0.5) (end 1 1) (width 0.25) (layer F.Cu) (net 0) (uuid \"a-1\"))\n  (via blind locked (at 0 0) (size 1) (drill oval 0.5 0.25) (layers F.Cu B.Cu) (uuid \"v-1\"))\n  (zone)\n  (dimension aligned (layer F.Cu) (gr_text \"1.0\" (at 0 0)))\n  (target plus (at 1 2) (size 1) (width 0.1) (layer F.Cu))\n  (group (name \"G\") (id \"abc\") (members \"u1\" \"u2\"))\n)\n";
         fs::write(&path, src).expect("write fixture");
 
         let doc = PcbFile::read(&path).expect("read");
@@ -1167,6 +1437,45 @@ mod tests {
         assert_eq!(doc.ast().property_count, 1);
         assert_eq!(doc.ast().properties.len(), 1);
         assert_eq!(doc.ast().properties[0].key, "Owner");
+        assert!(doc.ast().has_general);
+        assert!(doc.ast().has_paper);
+        assert!(doc.ast().has_title_block);
+        assert_eq!(
+            doc.ast().general.as_ref().and_then(|g| g.thickness),
+            Some(1.6)
+        );
+        assert_eq!(
+            doc.ast().general.as_ref().and_then(|g| g.legacy_teardrops),
+            Some(false)
+        );
+        assert_eq!(
+            doc.ast().paper.as_ref().and_then(|p| p.kind.clone()),
+            Some("User".to_string())
+        );
+        assert_eq!(doc.ast().paper.as_ref().and_then(|p| p.width), Some(100.0));
+        assert_eq!(doc.ast().paper.as_ref().and_then(|p| p.height), Some(80.0));
+        assert_eq!(
+            doc.ast().paper.as_ref().and_then(|p| p.orientation.clone()),
+            Some("portrait".to_string())
+        );
+        assert_eq!(
+            doc.ast()
+                .title_block
+                .as_ref()
+                .and_then(|t| t.title.clone()),
+            Some("Demo".to_string())
+        );
+        assert_eq!(
+            doc.ast().title_block.as_ref().map(|t| t.comments.len()),
+            Some(2)
+        );
+        assert_eq!(
+            doc.ast()
+                .title_block
+                .as_ref()
+                .and_then(|t| t.comments.first().cloned()),
+            Some("c1".to_string())
+        );
         assert_eq!(doc.ast().setup.as_ref().map(|s| s.has_stackup), Some(true));
         assert_eq!(doc.ast().setup.as_ref().map(|s| s.stackup_layer_count), Some(2));
         assert_eq!(doc.ast().setup.as_ref().map(|s| s.has_plot_settings), Some(true));
@@ -1180,16 +1489,41 @@ mod tests {
         assert_eq!(doc.ast().footprint_count, 1);
         assert_eq!(doc.ast().footprints.len(), 1);
         assert_eq!(doc.ast().footprints[0].lib_id.as_deref(), Some("R_0603"));
+        assert_eq!(doc.ast().footprints[0].layer.as_deref(), Some("F.Cu"));
+        assert_eq!(doc.ast().footprints[0].at, Some([10.0, 20.0]));
+        assert_eq!(doc.ast().footprints[0].rotation, Some(90.0));
+        assert_eq!(doc.ast().footprints[0].uuid.as_deref(), Some("fp-1"));
+        assert_eq!(doc.ast().footprints[0].reference.as_deref(), Some("R1"));
+        assert_eq!(doc.ast().footprints[0].value.as_deref(), Some("1k"));
+        assert_eq!(doc.ast().footprints[0].property_count, 2);
+        assert_eq!(doc.ast().footprints[0].pad_count, 1);
+        assert_eq!(doc.ast().footprints[0].model_count, 1);
+        assert_eq!(doc.ast().footprints[0].graphic_count, 2);
+        assert_eq!(doc.ast().footprints[0].fp_line_count, 1);
+        assert_eq!(doc.ast().footprints[0].fp_text_count, 1);
         assert_eq!(doc.ast().graphic_count, 1);
         assert_eq!(doc.ast().gr_line_count, 1);
         assert_eq!(doc.ast().graphics.len(), 1);
         assert_eq!(doc.ast().graphics[0].token, "gr_line");
-        assert_eq!(doc.ast().graphics[0].layer, None);
+        assert_eq!(doc.ast().graphics[0].layer.as_deref(), Some("F.Cu"));
+        assert!(doc.ast().graphics[0].locked);
+        assert_eq!(doc.ast().graphics[0].uuid.as_deref(), Some("g-1"));
         assert_eq!(doc.ast().trace_segment_count, 1);
         assert_eq!(doc.ast().segments.len(), 1);
         assert_eq!(doc.ast().segments[0].layer.as_deref(), Some("F.Cu"));
+        assert!(doc.ast().segments[0].locked);
+        assert_eq!(doc.ast().segments[0].uuid.as_deref(), Some("s-1"));
+        assert_eq!(doc.ast().trace_arc_count, 1);
+        assert_eq!(doc.ast().arcs.len(), 1);
+        assert_eq!(doc.ast().arcs[0].uuid.as_deref(), Some("a-1"));
         assert_eq!(doc.ast().via_count, 1);
         assert_eq!(doc.ast().vias.len(), 1);
+        assert_eq!(doc.ast().vias[0].via_type.as_deref(), Some("blind"));
+        assert!(doc.ast().vias[0].locked);
+        assert_eq!(doc.ast().vias[0].drill, None);
+        assert_eq!(doc.ast().vias[0].drill_shape.as_deref(), Some("oval"));
+        assert_eq!(doc.ast().vias[0].drill_x, Some(0.5));
+        assert_eq!(doc.ast().vias[0].drill_y, Some(0.25));
         assert_eq!(doc.ast().vias[0].layers.len(), 2);
         assert_eq!(doc.ast().zone_count, 1);
         assert_eq!(doc.ast().zones.len(), 1);
@@ -1238,6 +1572,28 @@ mod tests {
         assert_eq!(doc.ast().dimensions[0].layer.as_deref(), Some("Cmts.User"));
         assert!(doc.ast().dimensions[0].format_present);
         assert_eq!(doc.ast().dimensions[0].gr_text_count, 1);
+
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn parses_standard_paper_orientation() {
+        let path = tmp_file("pcb_std_paper");
+        let src = "(kicad_pcb (version 20260101) (generator pcbnew) (paper A4 portrait))\n";
+        fs::write(&path, src).expect("write fixture");
+
+        let doc = PcbFile::read(&path).expect("read");
+        assert!(doc.ast().has_paper);
+        assert_eq!(
+            doc.ast().paper.as_ref().and_then(|p| p.kind.clone()),
+            Some("A4".to_string())
+        );
+        assert_eq!(doc.ast().paper.as_ref().and_then(|p| p.width), None);
+        assert_eq!(doc.ast().paper.as_ref().and_then(|p| p.height), None);
+        assert_eq!(
+            doc.ast().paper.as_ref().and_then(|p| p.orientation.clone()),
+            Some("portrait".to_string())
+        );
 
         let _ = fs::remove_file(path);
     }
