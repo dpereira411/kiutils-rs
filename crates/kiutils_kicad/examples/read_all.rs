@@ -5,7 +5,9 @@ use kiutils_kicad::{
 };
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let base = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("examples").join("data");
+    let base = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("examples")
+        .join("data");
 
     let pcb = PcbFile::read(base.join("sample.kicad_pcb"))?;
     println!("pcb version: {:?}", pcb.ast().version);

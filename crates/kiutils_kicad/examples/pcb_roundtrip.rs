@@ -9,14 +9,8 @@ fn usage() -> String {
 
 fn main() -> Result<(), String> {
     let mut args = env::args().skip(1);
-    let in_path = args
-        .next()
-        .map(PathBuf::from)
-        .ok_or_else(usage)?;
-    let out_path = args
-        .next()
-        .map(PathBuf::from)
-        .ok_or_else(usage)?;
+    let in_path = args.next().map(PathBuf::from).ok_or_else(usage)?;
+    let out_path = args.next().map(PathBuf::from).ok_or_else(usage)?;
 
     let mut doc = PcbFile::read(&in_path).map_err(|e| e.to_string())?;
     doc.set_generator("kiutils")

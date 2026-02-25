@@ -94,14 +94,10 @@ impl FpLibTableFile {
             .count();
         for item in root_items.iter().skip(1) {
             if let Node::List { items, .. } = item {
-                if let [
-                    Node::Atom {
-                        atom: Atom::Symbol(head),
-                        ..
-                    },
-                    Node::Atom { atom, .. },
-                    ..,
-                ] = items.as_slice()
+                if let [Node::Atom {
+                    atom: Atom::Symbol(head),
+                    ..
+                }, Node::Atom { atom, .. }, ..] = items.as_slice()
                 {
                     if head == "version" {
                         match atom {

@@ -63,7 +63,11 @@ impl DesignRulesFile {
                 }
                 continue;
             };
-            let Some(Node::Atom { atom: Atom::Symbol(head), .. }) = items.first() else {
+            let Some(Node::Atom {
+                atom: Atom::Symbol(head),
+                ..
+            }) = items.first()
+            else {
                 if let Some(unknown) = UnknownNode::from_node(node) {
                     unknown_nodes.push(unknown);
                 }
@@ -121,7 +125,8 @@ mod tests {
     #[test]
     fn read_rootless_dru() {
         let path = tmp_file("dru_ok");
-        let src = "(version 1)\n(rule \"x\" (constraint clearance (min \"0.1mm\")) (condition \"A\"))\n";
+        let src =
+            "(version 1)\n(rule \"x\" (constraint clearance (min \"0.1mm\")) (condition \"A\"))\n";
         fs::write(&path, src).expect("write fixture");
 
         let doc = DesignRulesFile::read(&path).expect("read");
