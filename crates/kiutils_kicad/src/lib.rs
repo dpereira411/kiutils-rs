@@ -9,6 +9,12 @@
 //!
 //! Default write mode is lossless:
 //! parse -> modify typed AST -> write without regenerating unrelated formatting.
+//!
+//! Policy notes:
+//! - AST `*_count` fields are debug-oriented convenience and are not stability guarantees.
+//! - Unknown token diagnostics are primarily developer-facing; end-user tooling should summarize.
+//! - Version compatibility checks run post-parse by default to maximize lossless ingestion.
+//! - `.kicad_dru` rule conditions are preserved as strings in v1.
 
 mod batch;
 mod diagnostic;
@@ -19,6 +25,7 @@ mod lib_table;
 mod unknown;
 mod pcb;
 mod project;
+mod sexpr_utils;
 mod version;
 mod write_mode;
 

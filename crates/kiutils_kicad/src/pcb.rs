@@ -4,6 +4,7 @@ use std::path::Path;
 use kiutils_sexpr::{parse_one, Atom, CstDocument, Node};
 
 use crate::diagnostic::{Diagnostic, Severity};
+use crate::sexpr_utils::{atom_as_i32, atom_as_string, head_of, second_atom_i32, second_atom_string};
 use crate::version::VersionPolicy;
 use crate::{Error, UnknownNode, WriteMode};
 
@@ -584,37 +585,6 @@ fn parse_ast(cst: &CstDocument) -> PcbAst {
         group_count,
         generated_count,
         unknown_nodes,
-    }
-}
-
-fn head_of(node: &Node) -> Option<&str> {
-    let Node::List { items, .. } = node else {
-        return None;
-    };
-    let Some(Node::Atom {
-        atom: Atom::Symbol(head),
-        ..
-    }) = items.first()
-    else {
-        return None;
-    };
-    Some(head.as_str())
-}
-
-fn second_atom_string(node: &Node) -> Option<String> {
-    let Node::List { items, .. } = node else {
-        return None;
-    };
-    match items.get(1) {
-        Some(Node::Atom {
-            atom: Atom::Symbol(v),
-            ..
-        }) => Some(v.clone()),
-        Some(Node::Atom {
-            atom: Atom::Quoted(v),
-            ..
-        }) => Some(v.clone()),
-        _ => None,
     }
 }
 
@@ -1272,30 +1242,8 @@ fn parse_setup_summary(node: &Node) -> PcbSetupSummary {
     }
 }
 
-fn atom_as_string(node: &Node) -> Option<String> {
-    match node {
-        Node::Atom {
-            atom: Atom::Symbol(v),
-            ..
-        } => Some(v.clone()),
-        Node::Atom {
-            atom: Atom::Quoted(v),
-            ..
-        } => Some(v.clone()),
-        _ => None,
-    }
-}
-
-fn atom_as_i32(node: &Node) -> Option<i32> {
-    atom_as_string(node).and_then(|s| s.parse::<i32>().ok())
-}
-
 fn atom_as_f64(node: &Node) -> Option<f64> {
     atom_as_string(node).and_then(|s| s.parse::<f64>().ok())
-}
-
-fn second_atom_i32(node: &Node) -> Option<i32> {
-    second_atom_string(node).and_then(|s| s.parse::<i32>().ok())
 }
 
 fn second_atom_f64(node: &Node) -> Option<f64> {
