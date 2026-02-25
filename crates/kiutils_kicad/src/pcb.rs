@@ -1207,8 +1207,10 @@ fn parse_graphic_summary(node: &Node, token: &str) -> PcbGraphicSummary {
     let mut locked = false;
 
     if let Node::List { items, .. } = node {
-        // For gr_text / gr_text_box, second token may be the text content.
-        text = items.get(1).and_then(atom_as_string);
+        // Only text graphics treat second token as content.
+        if matches!(token, "gr_text" | "gr_text_box") {
+            text = items.get(1).and_then(atom_as_string);
+        }
         locked = items
             .iter()
             .any(|n| matches!(n, Node::Atom { atom: Atom::Symbol(s), .. } if s == "locked"));
@@ -1789,6 +1791,21 @@ mod tests {
 
         let _ = fs::remove_file(path);
         let _ = fs::remove_file(out);
+    }
+
+    #[test]
+    fn non_text_graphics_do_not_parse_locked_as_text() {
+        let path = tmp_file("pcb_graphic_text_regression");
+        let src = "(kicad_pcb (version 20241229) (generator pcbnew)\n  (gr_line locked (start 0 0) (end 1 1) (layer \"F.SilkS\"))\n)\n";
+        fs::write(&path, src).expect("write fixture");
+
+        let doc = PcbFile::read(&path).expect("read");
+        assert_eq!(doc.ast().graphics.len(), 1);
+        assert_eq!(doc.ast().graphics[0].token, "gr_line");
+        assert_eq!(doc.ast().graphics[0].text, None);
+        assert!(doc.ast().graphics[0].locked);
+
+        let _ = fs::remove_file(path);
     }
 
     #[test]
