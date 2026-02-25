@@ -75,7 +75,9 @@ impl ProjectFile {
             .and_then(Value::as_object)
             .and_then(|m| m.get("version"))
             .and_then(Value::as_i64)
-            .map(|v| v as i32);
+            .map(i32::try_from)
+            .transpose()
+            .map_err(|_| Error::Validation("meta.version is out of i32 range".to_string()))?;
 
         let pinned_footprint_libs = json
             .get("libraries")
@@ -203,5 +205,24 @@ mod tests {
 
         let _ = fs::remove_file(path);
         let _ = fs::remove_file(out);
+    }
+
+    #[test]
+    fn read_project_rejects_out_of_range_meta_version() {
+        let path = tmp_file("pro_meta_version_oob");
+        let src = r#"{
+  "meta": { "version": 9223372036854775807 },
+  "libraries": { "pinned_footprint_libs": ["A"] }
+}
+"#;
+        fs::write(&path, src).expect("write fixture");
+
+        let err = ProjectFile::read(&path).expect_err("read should fail");
+        match err {
+            Error::Validation(msg) => assert!(msg.contains("meta.version is out of i32 range")),
+            _ => panic!("expected validation error"),
+        }
+
+        let _ = fs::remove_file(path);
     }
 }
