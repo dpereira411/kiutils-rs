@@ -150,7 +150,7 @@ impl<'a> P<'a> {
     fn parse_quoted(&mut self) -> Result<Node, ParseError> {
         let start = self.i;
         self.i += 1;
-        let mut out = String::new();
+        let mut out = Vec::<u8>::new();
         while self.i < self.s.len() {
             let b = self.s[self.i];
             self.i += 1;
@@ -159,17 +159,19 @@ impl<'a> P<'a> {
                     if self.i >= self.s.len() {
                         return Err(ParseError::UnexpectedEof);
                     }
-                    let next = self.s[self.i] as char;
+                    let next = self.s[self.i];
                     self.i += 1;
                     out.push(next);
                 }
                 b'"' => {
+                    let text =
+                        String::from_utf8(out).map_err(|_| ParseError::UnexpectedToken(start))?;
                     return Ok(Node::Atom {
-                        atom: Atom::Quoted(out),
+                        atom: Atom::Quoted(text),
                         span: Span { start, end: self.i },
                     });
                 }
-                _ => out.push(b as char),
+                _ => out.push(b),
             }
         }
         Err(ParseError::UnexpectedEof)
@@ -256,5 +258,37 @@ mod tests {
             doc.to_canonical_string(),
             "(kicad_pcb (version 20260101))\n"
         );
+    }
+
+    #[test]
+    fn parse_quoted_preserves_utf8_content() {
+        let doc = parse_one("(x \"café 日本語 🚀\")").expect("parse");
+        let Node::List { items, .. } = &doc.nodes[0] else {
+            panic!("expected list");
+        };
+        let Node::Atom {
+            atom: Atom::Quoted(s),
+            ..
+        } = &items[1]
+        else {
+            panic!("expected quoted atom");
+        };
+        assert_eq!(s, "café 日本語 🚀");
+    }
+
+    #[test]
+    fn parse_quoted_preserves_utf8_with_escaped_quote() {
+        let doc = parse_one("(x \"café \\\"日本語\\\"\")").expect("parse");
+        let Node::List { items, .. } = &doc.nodes[0] else {
+            panic!("expected list");
+        };
+        let Node::Atom {
+            atom: Atom::Quoted(s),
+            ..
+        } = &items[1]
+        else {
+            panic!("expected quoted atom");
+        };
+        assert_eq!(s, "café \"日本語\"");
     }
 }
