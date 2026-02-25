@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use kiutils_kicad::{
     DesignRulesFile, FootprintFile, FpLibTableFile, PcbFile, ProjectFile, WriteMode,
 };
-use serde_json::json;
+use serde_json::{json, Value};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Kind {
@@ -137,380 +137,410 @@ fn detect_kind(path: &Path) -> Option<Kind> {
     }
 }
 
+struct InspectField {
+    key: &'static str,
+    json: Value,
+    text: String,
+}
+
+fn field(key: &'static str, json: Value, text: String) -> InspectField {
+    InspectField { key, json, text }
+}
+
+fn emit_fields(kind: &str, path: &Path, fields: &[InspectField], as_json: bool) {
+    if as_json {
+        let mut m = serde_json::Map::new();
+        m.insert("kind".into(), json!(kind));
+        m.insert("path".into(), json!(path));
+        for f in fields {
+            m.insert(f.key.into(), f.json.clone());
+        }
+        println!("{}", Value::Object(m));
+    } else {
+        println!("kind: {kind}");
+        println!("path: {}", path.display());
+        for f in fields {
+            println!("{}: {}", f.key, f.text);
+        }
+    }
+}
+
+fn pcb_fields(doc: &kiutils_kicad::PcbDocument) -> Vec<InspectField> {
+    let ast = doc.ast();
+    vec![
+        field("version", json!(ast.version), format!("{:?}", ast.version)),
+        field("generator", json!(ast.generator), format!("{:?}", ast.generator)),
+        field(
+            "generator_version",
+            json!(ast.generator_version),
+            format!("{:?}", ast.generator_version),
+        ),
+        field(
+            "parsed_property_entries",
+            json!(ast.properties.len()),
+            ast.properties.len().to_string(),
+        ),
+        field(
+            "parsed_layer_entries",
+            json!(ast.layers.len()),
+            ast.layers.len().to_string(),
+        ),
+        field("parsed_net_entries", json!(ast.nets.len()), ast.nets.len().to_string()),
+        field(
+            "parsed_footprint_entries",
+            json!(ast.footprints.len()),
+            ast.footprints.len().to_string(),
+        ),
+        field(
+            "parsed_segment_entries",
+            json!(ast.segments.len()),
+            ast.segments.len().to_string(),
+        ),
+        field("parsed_arc_entries", json!(ast.arcs.len()), ast.arcs.len().to_string()),
+        field("parsed_via_entries", json!(ast.vias.len()), ast.vias.len().to_string()),
+        field(
+            "parsed_zone_entries",
+            json!(ast.zones.len()),
+            ast.zones.len().to_string(),
+        ),
+        field(
+            "parsed_generated_entries",
+            json!(ast.generated_items.len()),
+            ast.generated_items.len().to_string(),
+        ),
+        field(
+            "parsed_dimension_entries",
+            json!(ast.dimensions.len()),
+            ast.dimensions.len().to_string(),
+        ),
+        field(
+            "parsed_target_entries",
+            json!(ast.targets.len()),
+            ast.targets.len().to_string(),
+        ),
+        field(
+            "parsed_group_entries",
+            json!(ast.groups.len()),
+            ast.groups.len().to_string(),
+        ),
+        field(
+            "parsed_graphic_entries",
+            json!(ast.graphics.len()),
+            ast.graphics.len().to_string(),
+        ),
+        field(
+            "first_layer",
+            json!(ast.layers.first().and_then(|l| l.name.clone())),
+            format!("{:?}", ast.layers.first().and_then(|l| l.name.clone())),
+        ),
+        field(
+            "first_net",
+            json!(ast.nets.first().and_then(|n| n.name.clone())),
+            format!("{:?}", ast.nets.first().and_then(|n| n.name.clone())),
+        ),
+        field(
+            "first_footprint_lib_id",
+            json!(ast.footprints.first().and_then(|f| f.lib_id.clone())),
+            format!("{:?}", ast.footprints.first().and_then(|f| f.lib_id.clone())),
+        ),
+        field(
+            "first_footprint_ref",
+            json!(ast.footprints.first().and_then(|f| f.reference.clone())),
+            format!("{:?}", ast.footprints.first().and_then(|f| f.reference.clone())),
+        ),
+        field(
+            "first_footprint_uuid",
+            json!(ast.footprints.first().and_then(|f| f.uuid.clone())),
+            format!("{:?}", ast.footprints.first().and_then(|f| f.uuid.clone())),
+        ),
+        field(
+            "first_footprint_rotation",
+            json!(ast.footprints.first().and_then(|f| f.rotation)),
+            format!("{:?}", ast.footprints.first().and_then(|f| f.rotation)),
+        ),
+        field(
+            "first_footprint_pad_count",
+            json!(ast.footprints.first().map(|f| f.pad_count)),
+            format!("{:?}", ast.footprints.first().map(|f| f.pad_count)),
+        ),
+        field(
+            "first_segment_layer",
+            json!(ast.segments.first().and_then(|s| s.layer.clone())),
+            format!("{:?}", ast.segments.first().and_then(|s| s.layer.clone())),
+        ),
+        field(
+            "first_segment_uuid",
+            json!(ast.segments.first().and_then(|s| s.uuid.clone())),
+            format!("{:?}", ast.segments.first().and_then(|s| s.uuid.clone())),
+        ),
+        field(
+            "first_segment_locked",
+            json!(ast.segments.first().map(|s| s.locked)),
+            format!("{:?}", ast.segments.first().map(|s| s.locked)),
+        ),
+        field(
+            "first_via_uuid",
+            json!(ast.vias.first().and_then(|v| v.uuid.clone())),
+            format!("{:?}", ast.vias.first().and_then(|v| v.uuid.clone())),
+        ),
+        field(
+            "first_via_drill_shape",
+            json!(ast.vias.first().and_then(|v| v.drill_shape.clone())),
+            format!("{:?}", ast.vias.first().and_then(|v| v.drill_shape.clone())),
+        ),
+        field(
+            "first_via_locked",
+            json!(ast.vias.first().map(|v| v.locked)),
+            format!("{:?}", ast.vias.first().map(|v| v.locked)),
+        ),
+        field(
+            "first_zone_net_name",
+            json!(ast.zones.first().and_then(|z| z.net_name.clone())),
+            format!("{:?}", ast.zones.first().and_then(|z| z.net_name.clone())),
+        ),
+        field(
+            "first_zone_layer",
+            json!(ast.zones.first().and_then(|z| z.layer.clone())),
+            format!("{:?}", ast.zones.first().and_then(|z| z.layer.clone())),
+        ),
+        field(
+            "first_zone_layers_len",
+            json!(ast.zones.first().map(|z| z.layers.len())),
+            format!("{:?}", ast.zones.first().map(|z| z.layers.len())),
+        ),
+        field(
+            "first_zone_fill_enabled",
+            json!(ast.zones.first().and_then(|z| z.fill_enabled)),
+            format!("{:?}", ast.zones.first().and_then(|z| z.fill_enabled)),
+        ),
+        field(
+            "first_generated_type",
+            json!(ast.generated_items.first().and_then(|g| g.generated_type.clone())),
+            format!(
+                "{:?}",
+                ast.generated_items
+                    .first()
+                    .and_then(|g| g.generated_type.clone())
+            ),
+        ),
+        field(
+            "first_generated_last_netname",
+            json!(ast.generated_items.first().and_then(|g| g.last_netname.clone())),
+            format!(
+                "{:?}",
+                ast.generated_items
+                    .first()
+                    .and_then(|g| g.last_netname.clone())
+            ),
+        ),
+        field(
+            "first_dimension_type",
+            json!(ast.dimensions.first().and_then(|d| d.dimension_type.clone())),
+            format!(
+                "{:?}",
+                ast.dimensions.first().and_then(|d| d.dimension_type.clone())
+            ),
+        ),
+        field(
+            "first_target_shape",
+            json!(ast.targets.first().and_then(|t| t.shape.clone())),
+            format!("{:?}", ast.targets.first().and_then(|t| t.shape.clone())),
+        ),
+        field(
+            "first_group_member_count",
+            json!(ast.groups.first().map(|g| g.member_count)),
+            format!("{:?}", ast.groups.first().map(|g| g.member_count)),
+        ),
+        field(
+            "first_graphic_token",
+            json!(ast.graphics.first().map(|g| g.token.clone())),
+            format!("{:?}", ast.graphics.first().map(|g| g.token.clone())),
+        ),
+        field(
+            "first_graphic_layer",
+            json!(ast.graphics.first().and_then(|g| g.layer.clone())),
+            format!("{:?}", ast.graphics.first().and_then(|g| g.layer.clone())),
+        ),
+        field(
+            "first_graphic_uuid",
+            json!(ast.graphics.first().and_then(|g| g.uuid.clone())),
+            format!("{:?}", ast.graphics.first().and_then(|g| g.uuid.clone())),
+        ),
+        field(
+            "first_graphic_locked",
+            json!(ast.graphics.first().map(|g| g.locked)),
+            format!("{:?}", ast.graphics.first().map(|g| g.locked)),
+        ),
+        field(
+            "setup_has_stackup",
+            json!(ast.setup.as_ref().map(|s| s.has_stackup)),
+            format!("{:?}", ast.setup.as_ref().map(|s| s.has_stackup)),
+        ),
+        field(
+            "general_thickness",
+            json!(ast.general.as_ref().and_then(|g| g.thickness)),
+            format!("{:?}", ast.general.as_ref().and_then(|g| g.thickness)),
+        ),
+        field(
+            "paper_kind",
+            json!(ast.paper.as_ref().and_then(|p| p.kind.clone())),
+            format!("{:?}", ast.paper.as_ref().and_then(|p| p.kind.clone())),
+        ),
+        field(
+            "title_block_title",
+            json!(ast.title_block.as_ref().and_then(|t| t.title.clone())),
+            format!(
+                "{:?}",
+                ast.title_block.as_ref().and_then(|t| t.title.clone())
+            ),
+        ),
+        field(
+            "setup_stackup_layer_count",
+            json!(ast.setup.as_ref().map(|s| s.stackup_layer_count)),
+            format!("{:?}", ast.setup.as_ref().map(|s| s.stackup_layer_count)),
+        ),
+        field(
+            "setup_has_plot_settings",
+            json!(ast.setup.as_ref().map(|s| s.has_plot_settings)),
+            format!("{:?}", ast.setup.as_ref().map(|s| s.has_plot_settings)),
+        ),
+        field(
+            "setup_pad_to_mask_clearance",
+            json!(ast.setup.as_ref().and_then(|s| s.pad_to_mask_clearance)),
+            format!(
+                "{:?}",
+                ast.setup.as_ref().and_then(|s| s.pad_to_mask_clearance)
+            ),
+        ),
+        field(
+            "has_embedded_files",
+            json!(ast.has_embedded_files),
+            ast.has_embedded_files.to_string(),
+        ),
+        field(
+            "embedded_file_count",
+            json!(ast.embedded_file_count),
+            ast.embedded_file_count.to_string(),
+        ),
+        field("layer_count", json!(ast.layer_count), ast.layer_count.to_string()),
+        field(
+            "property_count",
+            json!(ast.property_count),
+            ast.property_count.to_string(),
+        ),
+        field("net_count", json!(ast.net_count), ast.net_count.to_string()),
+        field(
+            "footprint_count",
+            json!(ast.footprint_count),
+            ast.footprint_count.to_string(),
+        ),
+        field(
+            "graphic_count",
+            json!(ast.graphic_count),
+            ast.graphic_count.to_string(),
+        ),
+        field(
+            "gr_line_count",
+            json!(ast.gr_line_count),
+            ast.gr_line_count.to_string(),
+        ),
+        field(
+            "gr_rect_count",
+            json!(ast.gr_rect_count),
+            ast.gr_rect_count.to_string(),
+        ),
+        field(
+            "gr_circle_count",
+            json!(ast.gr_circle_count),
+            ast.gr_circle_count.to_string(),
+        ),
+        field(
+            "gr_arc_count",
+            json!(ast.gr_arc_count),
+            ast.gr_arc_count.to_string(),
+        ),
+        field(
+            "gr_poly_count",
+            json!(ast.gr_poly_count),
+            ast.gr_poly_count.to_string(),
+        ),
+        field(
+            "gr_curve_count",
+            json!(ast.gr_curve_count),
+            ast.gr_curve_count.to_string(),
+        ),
+        field(
+            "gr_text_count",
+            json!(ast.gr_text_count),
+            ast.gr_text_count.to_string(),
+        ),
+        field(
+            "gr_text_box_count",
+            json!(ast.gr_text_box_count),
+            ast.gr_text_box_count.to_string(),
+        ),
+        field(
+            "trace_segment_count",
+            json!(ast.trace_segment_count),
+            ast.trace_segment_count.to_string(),
+        ),
+        field(
+            "trace_arc_count",
+            json!(ast.trace_arc_count),
+            ast.trace_arc_count.to_string(),
+        ),
+        field("via_count", json!(ast.via_count), ast.via_count.to_string()),
+        field("zone_count", json!(ast.zone_count), ast.zone_count.to_string()),
+        field(
+            "dimension_count",
+            json!(ast.dimension_count),
+            ast.dimension_count.to_string(),
+        ),
+        field(
+            "target_count",
+            json!(ast.target_count),
+            ast.target_count.to_string(),
+        ),
+        field(
+            "group_count",
+            json!(ast.group_count),
+            ast.group_count.to_string(),
+        ),
+        field(
+            "generated_count",
+            json!(ast.generated_count),
+            ast.generated_count.to_string(),
+        ),
+        field(
+            "unknown_count",
+            json!(ast.unknown_nodes.len()),
+            ast.unknown_nodes.len().to_string(),
+        ),
+        field(
+            "diagnostic_count",
+            json!(doc.diagnostics().len()),
+            doc.diagnostics().len().to_string(),
+        ),
+    ]
+}
+
 fn inspect_pcb(opts: &Opts) -> Result<(), String> {
     let doc = PcbFile::read(&opts.path).map_err(|e| e.to_string())?;
+    let fields = pcb_fields(&doc);
     if opts.as_json {
         let mut m = serde_json::Map::new();
         m.insert("kind".into(), json!("pcb"));
         m.insert("path".into(), json!(opts.path));
-        m.insert("version".into(), json!(doc.ast().version));
-        m.insert("generator".into(), json!(doc.ast().generator));
-        m.insert("generator_version".into(), json!(doc.ast().generator_version));
-        m.insert(
-            "parsed_property_entries".into(),
-            json!(doc.ast().properties.len()),
-        );
-        m.insert("parsed_layer_entries".into(), json!(doc.ast().layers.len()));
-        m.insert("parsed_net_entries".into(), json!(doc.ast().nets.len()));
-        m.insert("parsed_footprint_entries".into(), json!(doc.ast().footprints.len()));
-        m.insert("parsed_segment_entries".into(), json!(doc.ast().segments.len()));
-        m.insert("parsed_arc_entries".into(), json!(doc.ast().arcs.len()));
-        m.insert("parsed_via_entries".into(), json!(doc.ast().vias.len()));
-        m.insert("parsed_zone_entries".into(), json!(doc.ast().zones.len()));
-        m.insert("parsed_generated_entries".into(), json!(doc.ast().generated_items.len()));
-        m.insert("parsed_dimension_entries".into(), json!(doc.ast().dimensions.len()));
-        m.insert("parsed_target_entries".into(), json!(doc.ast().targets.len()));
-        m.insert("parsed_group_entries".into(), json!(doc.ast().groups.len()));
-        m.insert("parsed_graphic_entries".into(), json!(doc.ast().graphics.len()));
-        m.insert(
-            "first_layer".into(),
-            json!(doc.ast().layers.first().and_then(|l| l.name.clone())),
-        );
-        m.insert(
-            "first_net".into(),
-            json!(doc.ast().nets.first().and_then(|n| n.name.clone())),
-        );
-        m.insert(
-            "first_footprint_lib_id".into(),
-            json!(doc.ast().footprints.first().and_then(|f| f.lib_id.clone())),
-        );
-        m.insert(
-            "first_footprint_ref".into(),
-            json!(doc.ast().footprints.first().and_then(|f| f.reference.clone())),
-        );
-        m.insert(
-            "first_footprint_uuid".into(),
-            json!(doc.ast().footprints.first().and_then(|f| f.uuid.clone())),
-        );
-        m.insert(
-            "first_footprint_rotation".into(),
-            json!(doc.ast().footprints.first().and_then(|f| f.rotation)),
-        );
-        m.insert(
-            "first_footprint_pad_count".into(),
-            json!(doc.ast().footprints.first().map(|f| f.pad_count)),
-        );
-        m.insert(
-            "first_segment_layer".into(),
-            json!(doc.ast().segments.first().and_then(|s| s.layer.clone())),
-        );
-        m.insert(
-            "first_segment_uuid".into(),
-            json!(doc.ast().segments.first().and_then(|s| s.uuid.clone())),
-        );
-        m.insert(
-            "first_segment_locked".into(),
-            json!(doc.ast().segments.first().map(|s| s.locked)),
-        );
-        m.insert(
-            "first_via_uuid".into(),
-            json!(doc.ast().vias.first().and_then(|v| v.uuid.clone())),
-        );
-        m.insert(
-            "first_via_drill_shape".into(),
-            json!(doc.ast().vias.first().and_then(|v| v.drill_shape.clone())),
-        );
-        m.insert(
-            "first_via_locked".into(),
-            json!(doc.ast().vias.first().map(|v| v.locked)),
-        );
-        m.insert(
-            "first_zone_net_name".into(),
-            json!(doc.ast().zones.first().and_then(|z| z.net_name.clone())),
-        );
-        m.insert(
-            "first_zone_layer".into(),
-            json!(doc.ast().zones.first().and_then(|z| z.layer.clone())),
-        );
-        m.insert(
-            "first_zone_layers_len".into(),
-            json!(doc.ast().zones.first().map(|z| z.layers.len())),
-        );
-        m.insert(
-            "first_zone_fill_enabled".into(),
-            json!(doc.ast().zones.first().and_then(|z| z.fill_enabled)),
-        );
-        m.insert(
-            "first_generated_type".into(),
-            json!(doc.ast().generated_items.first().and_then(|g| g.generated_type.clone())),
-        );
-        m.insert(
-            "first_generated_last_netname".into(),
-            json!(doc.ast().generated_items.first().and_then(|g| g.last_netname.clone())),
-        );
-        m.insert(
-            "first_dimension_type".into(),
-            json!(doc.ast().dimensions.first().and_then(|d| d.dimension_type.clone())),
-        );
-        m.insert(
-            "first_target_shape".into(),
-            json!(doc.ast().targets.first().and_then(|t| t.shape.clone())),
-        );
-        m.insert(
-            "first_group_member_count".into(),
-            json!(doc.ast().groups.first().map(|g| g.member_count)),
-        );
-        m.insert(
-            "first_graphic_token".into(),
-            json!(doc.ast().graphics.first().map(|g| g.token.clone())),
-        );
-        m.insert(
-            "first_graphic_layer".into(),
-            json!(doc.ast().graphics.first().and_then(|g| g.layer.clone())),
-        );
-        m.insert(
-            "first_graphic_uuid".into(),
-            json!(doc.ast().graphics.first().and_then(|g| g.uuid.clone())),
-        );
-        m.insert(
-            "first_graphic_locked".into(),
-            json!(doc.ast().graphics.first().map(|g| g.locked)),
-        );
-        m.insert(
-            "setup_has_stackup".into(),
-            json!(doc.ast().setup.as_ref().map(|s| s.has_stackup)),
-        );
-        m.insert(
-            "general_thickness".into(),
-            json!(doc.ast().general.as_ref().and_then(|g| g.thickness)),
-        );
-        m.insert(
-            "paper_kind".into(),
-            json!(doc.ast().paper.as_ref().and_then(|p| p.kind.clone())),
-        );
-        m.insert(
-            "title_block_title".into(),
-            json!(doc.ast().title_block.as_ref().and_then(|t| t.title.clone())),
-        );
-        m.insert(
-            "setup_stackup_layer_count".into(),
-            json!(doc.ast().setup.as_ref().map(|s| s.stackup_layer_count)),
-        );
-        m.insert(
-            "setup_has_plot_settings".into(),
-            json!(doc.ast().setup.as_ref().map(|s| s.has_plot_settings)),
-        );
-        m.insert(
-                "setup_pad_to_mask_clearance".into(),
-                json!(doc.ast().setup.as_ref().and_then(|s| s.pad_to_mask_clearance)),
-            );
-        m.insert(
-            "has_embedded_files".into(),
-            json!(doc.ast().has_embedded_files),
-        );
-        m.insert(
-            "embedded_file_count".into(),
-            json!(doc.ast().embedded_file_count),
-        );
-        m.insert("layer_count".into(), json!(doc.ast().layer_count));
-        m.insert("property_count".into(), json!(doc.ast().property_count));
-        m.insert("net_count".into(), json!(doc.ast().net_count));
-        m.insert("footprint_count".into(), json!(doc.ast().footprint_count));
-        m.insert("graphic_count".into(), json!(doc.ast().graphic_count));
-        m.insert("gr_line_count".into(), json!(doc.ast().gr_line_count));
-        m.insert("gr_rect_count".into(), json!(doc.ast().gr_rect_count));
-        m.insert("gr_circle_count".into(), json!(doc.ast().gr_circle_count));
-        m.insert("gr_arc_count".into(), json!(doc.ast().gr_arc_count));
-        m.insert("gr_poly_count".into(), json!(doc.ast().gr_poly_count));
-        m.insert("gr_curve_count".into(), json!(doc.ast().gr_curve_count));
-        m.insert("gr_text_count".into(), json!(doc.ast().gr_text_count));
-        m.insert("gr_text_box_count".into(), json!(doc.ast().gr_text_box_count));
-        m.insert("trace_segment_count".into(), json!(doc.ast().trace_segment_count));
-        m.insert("trace_arc_count".into(), json!(doc.ast().trace_arc_count));
-        m.insert("via_count".into(), json!(doc.ast().via_count));
-        m.insert("zone_count".into(), json!(doc.ast().zone_count));
-        m.insert("dimension_count".into(), json!(doc.ast().dimension_count));
-        m.insert("target_count".into(), json!(doc.ast().target_count));
-        m.insert("group_count".into(), json!(doc.ast().group_count));
-        m.insert("generated_count".into(), json!(doc.ast().generated_count));
-        m.insert("unknown_count".into(), json!(doc.ast().unknown_nodes.len()));
-        m.insert("diagnostic_count".into(), json!(doc.diagnostics().len()));
-        println!("{}", serde_json::Value::Object(m));
+        for f in &fields {
+            m.insert(f.key.into(), f.json.clone());
+        }
+        println!("{}", Value::Object(m));
     } else {
         println!("kind: pcb");
         println!("path: {}", opts.path.display());
-        println!("version: {:?}", doc.ast().version);
-        println!("generator: {:?}", doc.ast().generator);
-        println!("generator_version: {:?}", doc.ast().generator_version);
-        println!("parsed_property_entries: {}", doc.ast().properties.len());
-        println!("parsed_layer_entries: {}", doc.ast().layers.len());
-        println!("parsed_net_entries: {}", doc.ast().nets.len());
-        println!("parsed_footprint_entries: {}", doc.ast().footprints.len());
-        println!("parsed_segment_entries: {}", doc.ast().segments.len());
-        println!("parsed_arc_entries: {}", doc.ast().arcs.len());
-        println!("parsed_via_entries: {}", doc.ast().vias.len());
-        println!("parsed_zone_entries: {}", doc.ast().zones.len());
-        println!("parsed_generated_entries: {}", doc.ast().generated_items.len());
-        println!("parsed_dimension_entries: {}", doc.ast().dimensions.len());
-        println!("parsed_target_entries: {}", doc.ast().targets.len());
-        println!("parsed_group_entries: {}", doc.ast().groups.len());
-        println!("parsed_graphic_entries: {}", doc.ast().graphics.len());
-        println!(
-            "first_layer: {:?}",
-            doc.ast().layers.first().and_then(|l| l.name.clone())
-        );
-        println!(
-            "first_net: {:?}",
-            doc.ast().nets.first().and_then(|n| n.name.clone())
-        );
-        println!(
-            "first_footprint_lib_id: {:?}",
-            doc.ast().footprints.first().and_then(|f| f.lib_id.clone())
-        );
-        println!(
-            "first_footprint_ref: {:?}",
-            doc.ast().footprints.first().and_then(|f| f.reference.clone())
-        );
-        println!(
-            "first_footprint_uuid: {:?}",
-            doc.ast().footprints.first().and_then(|f| f.uuid.clone())
-        );
-        println!(
-            "first_footprint_rotation: {:?}",
-            doc.ast().footprints.first().and_then(|f| f.rotation)
-        );
-        println!(
-            "first_footprint_pad_count: {:?}",
-            doc.ast().footprints.first().map(|f| f.pad_count)
-        );
-        println!(
-            "first_segment_layer: {:?}",
-            doc.ast().segments.first().and_then(|s| s.layer.clone())
-        );
-        println!(
-            "first_segment_uuid: {:?}",
-            doc.ast().segments.first().and_then(|s| s.uuid.clone())
-        );
-        println!(
-            "first_segment_locked: {:?}",
-            doc.ast().segments.first().map(|s| s.locked)
-        );
-        println!(
-            "first_via_uuid: {:?}",
-            doc.ast().vias.first().and_then(|v| v.uuid.clone())
-        );
-        println!(
-            "first_via_drill_shape: {:?}",
-            doc.ast().vias.first().and_then(|v| v.drill_shape.clone())
-        );
-        println!(
-            "first_via_locked: {:?}",
-            doc.ast().vias.first().map(|v| v.locked)
-        );
-        println!(
-            "first_zone_net_name: {:?}",
-            doc.ast().zones.first().and_then(|z| z.net_name.clone())
-        );
-        println!(
-            "first_zone_layer: {:?}",
-            doc.ast().zones.first().and_then(|z| z.layer.clone())
-        );
-        println!(
-            "first_zone_layers_len: {:?}",
-            doc.ast().zones.first().map(|z| z.layers.len())
-        );
-        println!(
-            "first_zone_fill_enabled: {:?}",
-            doc.ast().zones.first().and_then(|z| z.fill_enabled)
-        );
-        println!(
-            "first_generated_type: {:?}",
-            doc.ast()
-                .generated_items
-                .first()
-                .and_then(|g| g.generated_type.clone())
-        );
-        println!(
-            "first_generated_last_netname: {:?}",
-            doc.ast()
-                .generated_items
-                .first()
-                .and_then(|g| g.last_netname.clone())
-        );
-        println!(
-            "first_dimension_type: {:?}",
-            doc.ast()
-                .dimensions
-                .first()
-                .and_then(|d| d.dimension_type.clone())
-        );
-        println!(
-            "first_target_shape: {:?}",
-            doc.ast().targets.first().and_then(|t| t.shape.clone())
-        );
-        println!(
-            "first_group_member_count: {:?}",
-            doc.ast().groups.first().map(|g| g.member_count)
-        );
-        println!(
-            "first_graphic_token: {:?}",
-            doc.ast().graphics.first().map(|g| g.token.clone())
-        );
-        println!(
-            "first_graphic_layer: {:?}",
-            doc.ast().graphics.first().and_then(|g| g.layer.clone())
-        );
-        println!(
-            "first_graphic_uuid: {:?}",
-            doc.ast().graphics.first().and_then(|g| g.uuid.clone())
-        );
-        println!(
-            "first_graphic_locked: {:?}",
-            doc.ast().graphics.first().map(|g| g.locked)
-        );
-        println!(
-            "setup_has_stackup: {:?}",
-            doc.ast().setup.as_ref().map(|s| s.has_stackup)
-        );
-        println!(
-            "general_thickness: {:?}",
-            doc.ast().general.as_ref().and_then(|g| g.thickness)
-        );
-        println!(
-            "paper_kind: {:?}",
-            doc.ast().paper.as_ref().and_then(|p| p.kind.clone())
-        );
-        println!(
-            "title_block_title: {:?}",
-            doc.ast().title_block.as_ref().and_then(|t| t.title.clone())
-        );
-        println!(
-            "setup_stackup_layer_count: {:?}",
-            doc.ast().setup.as_ref().map(|s| s.stackup_layer_count)
-        );
-        println!(
-            "setup_has_plot_settings: {:?}",
-            doc.ast().setup.as_ref().map(|s| s.has_plot_settings)
-        );
-        println!(
-            "setup_pad_to_mask_clearance: {:?}",
-            doc.ast().setup.as_ref().and_then(|s| s.pad_to_mask_clearance)
-        );
-        println!("has_embedded_files: {}", doc.ast().has_embedded_files);
-        println!("embedded_file_count: {}", doc.ast().embedded_file_count);
-        println!("layer_count: {}", doc.ast().layer_count);
-        println!("property_count: {}", doc.ast().property_count);
-        println!("net_count: {}", doc.ast().net_count);
-        println!("footprint_count: {}", doc.ast().footprint_count);
-        println!("graphic_count: {}", doc.ast().graphic_count);
-        println!("gr_line_count: {}", doc.ast().gr_line_count);
-        println!("gr_rect_count: {}", doc.ast().gr_rect_count);
-        println!("gr_circle_count: {}", doc.ast().gr_circle_count);
-        println!("gr_arc_count: {}", doc.ast().gr_arc_count);
-        println!("gr_poly_count: {}", doc.ast().gr_poly_count);
-        println!("gr_curve_count: {}", doc.ast().gr_curve_count);
-        println!("gr_text_count: {}", doc.ast().gr_text_count);
-        println!("gr_text_box_count: {}", doc.ast().gr_text_box_count);
-        println!("trace_segment_count: {}", doc.ast().trace_segment_count);
-        println!("trace_arc_count: {}", doc.ast().trace_arc_count);
-        println!("via_count: {}", doc.ast().via_count);
-        println!("zone_count: {}", doc.ast().zone_count);
-        println!("dimension_count: {}", doc.ast().dimension_count);
-        println!("target_count: {}", doc.ast().target_count);
-        println!("group_count: {}", doc.ast().group_count);
-        println!("generated_count: {}", doc.ast().generated_count);
-        println!("unknown_count: {}", doc.ast().unknown_nodes.len());
-        println!("diagnostic_count: {}", doc.diagnostics().len());
+        for f in &fields {
+            println!("{}: {}", f.key, f.text);
+        }
     }
 
     if opts.show_unknown {
@@ -539,99 +569,21 @@ fn inspect_pcb(opts: &Opts) -> Result<(), String> {
 
 fn inspect_footprint(opts: &Opts) -> Result<(), String> {
     let doc = FootprintFile::read(&opts.path).map_err(|e| e.to_string())?;
+    let fields = footprint_fields(&doc);
     if opts.as_json {
-        println!(
-            "{}",
-            json!({
-                "kind": "footprint",
-                "path": opts.path,
-                "lib_id": doc.ast().lib_id,
-                "version": doc.ast().version,
-                "generator": doc.ast().generator,
-                "generator_version": doc.ast().generator_version,
-                "layer": doc.ast().layer,
-                "descr": doc.ast().descr,
-                "tags": doc.ast().tags,
-                "property_count": doc.ast().property_count,
-                "attr_present": doc.ast().attr_present,
-                "locked_present": doc.ast().locked_present,
-                "private_layers_present": doc.ast().private_layers_present,
-                "net_tie_pad_groups_present": doc.ast().net_tie_pad_groups_present,
-                "embedded_fonts_present": doc.ast().embedded_fonts_present,
-                "has_embedded_files": doc.ast().has_embedded_files,
-                "embedded_file_count": doc.ast().embedded_file_count,
-                "clearance": doc.ast().clearance,
-                "solder_mask_margin": doc.ast().solder_mask_margin,
-                "solder_paste_margin": doc.ast().solder_paste_margin,
-                "solder_paste_margin_ratio": doc.ast().solder_paste_margin_ratio,
-                "duplicate_pad_numbers_are_jumpers": doc.ast().duplicate_pad_numbers_are_jumpers,
-                "pad_count": doc.ast().pad_count,
-                "model_count": doc.ast().model_count,
-                "zone_count": doc.ast().zone_count,
-                "group_count": doc.ast().group_count,
-                "graphic_count": doc.ast().graphic_count,
-                "fp_line_count": doc.ast().fp_line_count,
-                "fp_rect_count": doc.ast().fp_rect_count,
-                "fp_circle_count": doc.ast().fp_circle_count,
-                "fp_arc_count": doc.ast().fp_arc_count,
-                "fp_poly_count": doc.ast().fp_poly_count,
-                "fp_curve_count": doc.ast().fp_curve_count,
-                "fp_text_count": doc.ast().fp_text_count,
-                "fp_text_box_count": doc.ast().fp_text_box_count,
-                "unknown_count": doc.ast().unknown_nodes.len(),
-                "diagnostic_count": doc.diagnostics().len(),
-            })
-        );
+        let mut m = serde_json::Map::new();
+        m.insert("kind".into(), json!("footprint"));
+        m.insert("path".into(), json!(opts.path));
+        for f in &fields {
+            m.insert(f.key.into(), f.json.clone());
+        }
+        println!("{}", Value::Object(m));
     } else {
         println!("kind: footprint");
         println!("path: {}", opts.path.display());
-        println!("lib_id: {:?}", doc.ast().lib_id);
-        println!("version: {:?}", doc.ast().version);
-        println!("generator: {:?}", doc.ast().generator);
-        println!("generator_version: {:?}", doc.ast().generator_version);
-        println!("layer: {:?}", doc.ast().layer);
-        println!("descr: {:?}", doc.ast().descr);
-        println!("tags: {:?}", doc.ast().tags);
-        println!("property_count: {}", doc.ast().property_count);
-        println!("attr_present: {}", doc.ast().attr_present);
-        println!("locked_present: {}", doc.ast().locked_present);
-        println!(
-            "private_layers_present: {}",
-            doc.ast().private_layers_present
-        );
-        println!(
-            "net_tie_pad_groups_present: {}",
-            doc.ast().net_tie_pad_groups_present
-        );
-        println!("embedded_fonts_present: {}", doc.ast().embedded_fonts_present);
-        println!("has_embedded_files: {}", doc.ast().has_embedded_files);
-        println!("embedded_file_count: {}", doc.ast().embedded_file_count);
-        println!("clearance: {:?}", doc.ast().clearance);
-        println!("solder_mask_margin: {:?}", doc.ast().solder_mask_margin);
-        println!("solder_paste_margin: {:?}", doc.ast().solder_paste_margin);
-        println!(
-            "solder_paste_margin_ratio: {:?}",
-            doc.ast().solder_paste_margin_ratio
-        );
-        println!(
-            "duplicate_pad_numbers_are_jumpers: {:?}",
-            doc.ast().duplicate_pad_numbers_are_jumpers
-        );
-        println!("pad_count: {}", doc.ast().pad_count);
-        println!("model_count: {}", doc.ast().model_count);
-        println!("zone_count: {}", doc.ast().zone_count);
-        println!("group_count: {}", doc.ast().group_count);
-        println!("graphic_count: {}", doc.ast().graphic_count);
-        println!("fp_line_count: {}", doc.ast().fp_line_count);
-        println!("fp_rect_count: {}", doc.ast().fp_rect_count);
-        println!("fp_circle_count: {}", doc.ast().fp_circle_count);
-        println!("fp_arc_count: {}", doc.ast().fp_arc_count);
-        println!("fp_poly_count: {}", doc.ast().fp_poly_count);
-        println!("fp_curve_count: {}", doc.ast().fp_curve_count);
-        println!("fp_text_count: {}", doc.ast().fp_text_count);
-        println!("fp_text_box_count: {}", doc.ast().fp_text_box_count);
-        println!("unknown_count: {}", doc.ast().unknown_nodes.len());
-        println!("diagnostic_count: {}", doc.diagnostics().len());
+        for f in &fields {
+            println!("{}: {}", f.key, f.text);
+        }
     }
     if opts.show_unknown {
         for n in &doc.ast().unknown_nodes {
@@ -657,26 +609,147 @@ fn inspect_footprint(opts: &Opts) -> Result<(), String> {
     Ok(())
 }
 
+fn footprint_fields(doc: &kiutils_kicad::FootprintDocument) -> Vec<InspectField> {
+    let ast = doc.ast();
+    vec![
+        field("lib_id", json!(ast.lib_id), format!("{:?}", ast.lib_id)),
+        field("version", json!(ast.version), format!("{:?}", ast.version)),
+        field("generator", json!(ast.generator), format!("{:?}", ast.generator)),
+        field(
+            "generator_version",
+            json!(ast.generator_version),
+            format!("{:?}", ast.generator_version),
+        ),
+        field("layer", json!(ast.layer), format!("{:?}", ast.layer)),
+        field("descr", json!(ast.descr), format!("{:?}", ast.descr)),
+        field("tags", json!(ast.tags), format!("{:?}", ast.tags)),
+        field(
+            "property_count",
+            json!(ast.property_count),
+            ast.property_count.to_string(),
+        ),
+        field(
+            "attr_present",
+            json!(ast.attr_present),
+            ast.attr_present.to_string(),
+        ),
+        field(
+            "locked_present",
+            json!(ast.locked_present),
+            ast.locked_present.to_string(),
+        ),
+        field(
+            "private_layers_present",
+            json!(ast.private_layers_present),
+            ast.private_layers_present.to_string(),
+        ),
+        field(
+            "net_tie_pad_groups_present",
+            json!(ast.net_tie_pad_groups_present),
+            ast.net_tie_pad_groups_present.to_string(),
+        ),
+        field(
+            "embedded_fonts_present",
+            json!(ast.embedded_fonts_present),
+            ast.embedded_fonts_present.to_string(),
+        ),
+        field(
+            "has_embedded_files",
+            json!(ast.has_embedded_files),
+            ast.has_embedded_files.to_string(),
+        ),
+        field(
+            "embedded_file_count",
+            json!(ast.embedded_file_count),
+            ast.embedded_file_count.to_string(),
+        ),
+        field("clearance", json!(ast.clearance), format!("{:?}", ast.clearance)),
+        field(
+            "solder_mask_margin",
+            json!(ast.solder_mask_margin),
+            format!("{:?}", ast.solder_mask_margin),
+        ),
+        field(
+            "solder_paste_margin",
+            json!(ast.solder_paste_margin),
+            format!("{:?}", ast.solder_paste_margin),
+        ),
+        field(
+            "solder_paste_margin_ratio",
+            json!(ast.solder_paste_margin_ratio),
+            format!("{:?}", ast.solder_paste_margin_ratio),
+        ),
+        field(
+            "duplicate_pad_numbers_are_jumpers",
+            json!(ast.duplicate_pad_numbers_are_jumpers),
+            format!("{:?}", ast.duplicate_pad_numbers_are_jumpers),
+        ),
+        field("pad_count", json!(ast.pad_count), ast.pad_count.to_string()),
+        field("model_count", json!(ast.model_count), ast.model_count.to_string()),
+        field("zone_count", json!(ast.zone_count), ast.zone_count.to_string()),
+        field("group_count", json!(ast.group_count), ast.group_count.to_string()),
+        field(
+            "graphic_count",
+            json!(ast.graphic_count),
+            ast.graphic_count.to_string(),
+        ),
+        field(
+            "fp_line_count",
+            json!(ast.fp_line_count),
+            ast.fp_line_count.to_string(),
+        ),
+        field(
+            "fp_rect_count",
+            json!(ast.fp_rect_count),
+            ast.fp_rect_count.to_string(),
+        ),
+        field(
+            "fp_circle_count",
+            json!(ast.fp_circle_count),
+            ast.fp_circle_count.to_string(),
+        ),
+        field(
+            "fp_arc_count",
+            json!(ast.fp_arc_count),
+            ast.fp_arc_count.to_string(),
+        ),
+        field(
+            "fp_poly_count",
+            json!(ast.fp_poly_count),
+            ast.fp_poly_count.to_string(),
+        ),
+        field(
+            "fp_curve_count",
+            json!(ast.fp_curve_count),
+            ast.fp_curve_count.to_string(),
+        ),
+        field(
+            "fp_text_count",
+            json!(ast.fp_text_count),
+            ast.fp_text_count.to_string(),
+        ),
+        field(
+            "fp_text_box_count",
+            json!(ast.fp_text_box_count),
+            ast.fp_text_box_count.to_string(),
+        ),
+        field(
+            "unknown_count",
+            json!(ast.unknown_nodes.len()),
+            ast.unknown_nodes.len().to_string(),
+        ),
+        field(
+            "diagnostic_count",
+            json!(doc.diagnostics().len()),
+            doc.diagnostics().len().to_string(),
+        ),
+    ]
+}
+
 fn inspect_fplib(opts: &Opts) -> Result<(), String> {
     let doc = FpLibTableFile::read(&opts.path).map_err(|e| e.to_string())?;
-    if opts.as_json {
-        println!(
-            "{}",
-            json!({
-                "kind": "fplib",
-                "path": opts.path,
-                "version": doc.ast().version,
-                "library_count": doc.ast().library_count,
-                "unknown_count": doc.ast().unknown_nodes.len(),
-            })
-        );
-    } else {
-        println!("kind: fplib");
-        println!("path: {}", opts.path.display());
-        println!("version: {:?}", doc.ast().version);
-        println!("library_count: {}", doc.ast().library_count);
-        println!("unknown_count: {}", doc.ast().unknown_nodes.len());
-    }
+    let fields = fplib_fields(&doc);
+    emit_fields("fplib", &opts.path, &fields, opts.as_json);
     if opts.show_unknown {
         for n in &doc.ast().unknown_nodes {
             println!("unknown: head={:?} span={}..{}", n.head, n.span.start, n.span.end);
@@ -698,24 +771,8 @@ fn inspect_fplib(opts: &Opts) -> Result<(), String> {
 
 fn inspect_dru(opts: &Opts) -> Result<(), String> {
     let doc = DesignRulesFile::read(&opts.path).map_err(|e| e.to_string())?;
-    if opts.as_json {
-        println!(
-            "{}",
-            json!({
-                "kind": "dru",
-                "path": opts.path,
-                "version": doc.ast().version,
-                "rule_count": doc.ast().rule_count,
-                "unknown_count": doc.ast().unknown_nodes.len(),
-            })
-        );
-    } else {
-        println!("kind: dru");
-        println!("path: {}", opts.path.display());
-        println!("version: {:?}", doc.ast().version);
-        println!("rule_count: {}", doc.ast().rule_count);
-        println!("unknown_count: {}", doc.ast().unknown_nodes.len());
-    }
+    let fields = dru_fields(&doc);
+    emit_fields("dru", &opts.path, &fields, opts.as_json);
     if opts.show_unknown {
         for n in &doc.ast().unknown_nodes {
             println!("unknown: head={:?} span={}..{}", n.head, n.span.start, n.span.end);
@@ -737,27 +794,8 @@ fn inspect_dru(opts: &Opts) -> Result<(), String> {
 
 fn inspect_project(opts: &Opts) -> Result<(), String> {
     let doc = ProjectFile::read(&opts.path).map_err(|e| e.to_string())?;
-    if opts.as_json {
-        println!(
-            "{}",
-            json!({
-                "kind": "project",
-                "path": opts.path,
-                "meta_version": doc.ast().meta_version,
-                "pinned_footprint_libs": doc.ast().pinned_footprint_libs,
-                "unknown_field_count": doc.ast().unknown_fields.len(),
-            })
-        );
-    } else {
-        println!("kind: project");
-        println!("path: {}", opts.path.display());
-        println!("meta_version: {:?}", doc.ast().meta_version);
-        println!(
-            "pinned_footprint_libs: {:?}",
-            doc.ast().pinned_footprint_libs
-        );
-        println!("unknown_field_count: {}", doc.ast().unknown_fields.len());
-    }
+    let fields = project_fields(&doc);
+    emit_fields("project", &opts.path, &fields, opts.as_json);
     if opts.show_unknown {
         for f in &doc.ast().unknown_fields {
             println!("unknown_field: key={} value={}", f.key, f.value);
@@ -775,6 +813,57 @@ fn inspect_project(opts: &Opts) -> Result<(), String> {
         println!("--- canonical ---\n{s}");
     }
     Ok(())
+}
+
+fn fplib_fields(doc: &kiutils_kicad::FpLibTableDocument) -> Vec<InspectField> {
+    let ast = doc.ast();
+    vec![
+        field("version", json!(ast.version), format!("{:?}", ast.version)),
+        field(
+            "library_count",
+            json!(ast.library_count),
+            ast.library_count.to_string(),
+        ),
+        field(
+            "unknown_count",
+            json!(ast.unknown_nodes.len()),
+            ast.unknown_nodes.len().to_string(),
+        ),
+    ]
+}
+
+fn dru_fields(doc: &kiutils_kicad::DesignRulesDocument) -> Vec<InspectField> {
+    let ast = doc.ast();
+    vec![
+        field("version", json!(ast.version), format!("{:?}", ast.version)),
+        field("rule_count", json!(ast.rule_count), ast.rule_count.to_string()),
+        field(
+            "unknown_count",
+            json!(ast.unknown_nodes.len()),
+            ast.unknown_nodes.len().to_string(),
+        ),
+    ]
+}
+
+fn project_fields(doc: &kiutils_kicad::ProjectDocument) -> Vec<InspectField> {
+    let ast = doc.ast();
+    vec![
+        field(
+            "meta_version",
+            json!(ast.meta_version),
+            format!("{:?}", ast.meta_version),
+        ),
+        field(
+            "pinned_footprint_libs",
+            json!(ast.pinned_footprint_libs),
+            format!("{:?}", ast.pinned_footprint_libs),
+        ),
+        field(
+            "unknown_field_count",
+            json!(ast.unknown_fields.len()),
+            ast.unknown_fields.len().to_string(),
+        ),
+    ]
 }
 
 fn temp_out(prefix: &str, ext: &str) -> PathBuf {
