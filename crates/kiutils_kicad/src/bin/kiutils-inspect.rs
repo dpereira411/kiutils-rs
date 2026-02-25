@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 
 use kiutils_kicad::{
     DesignRulesFile, FootprintFile, FpLibTableFile, PcbFile, ProjectFile, SchematicFile,
-    SymbolLibFile, WriteMode,
+    SymLibTableFile, SymbolLibFile, WorksheetFile, WriteMode,
 };
 use serde_json::{json, Value};
 
@@ -15,8 +15,10 @@ enum Kind {
     Schematic,
     Symbol,
     FpLibTable,
+    SymLibTable,
     Dru,
     Project,
+    Worksheet,
 }
 
 #[derive(Debug, Clone)]
@@ -45,7 +47,7 @@ fn run() -> Result<(), String> {
 
     let kind = if opts.kind == Kind::Auto {
         detect_kind(&opts.path).ok_or_else(|| {
-            "could not infer file type; pass --type pcb|footprint|schematic|symbol|fplib|dru|project".to_string()
+            "could not infer file type; pass --type pcb|footprint|schematic|symbol|fplib|symlib|dru|project|worksheet".to_string()
         })?
     } else {
         opts.kind
@@ -57,8 +59,10 @@ fn run() -> Result<(), String> {
         Kind::Schematic => inspect_schematic(&opts),
         Kind::Symbol => inspect_symbol(&opts),
         Kind::FpLibTable => inspect_fplib(&opts),
+        Kind::SymLibTable => inspect_symlib(&opts),
         Kind::Dru => inspect_dru(&opts),
         Kind::Project => inspect_project(&opts),
+        Kind::Worksheet => inspect_worksheet(&opts),
         Kind::Auto => Err("internal: unresolved auto kind".to_string()),
     }
 }
@@ -125,8 +129,10 @@ fn parse_kind(v: &str) -> Result<Kind, String> {
         "schematic" | "sch" => Ok(Kind::Schematic),
         "symbol" => Ok(Kind::Symbol),
         "fplib" => Ok(Kind::FpLibTable),
+        "symlib" => Ok(Kind::SymLibTable),
         "dru" => Ok(Kind::Dru),
         "project" => Ok(Kind::Project),
+        "worksheet" | "wks" => Ok(Kind::Worksheet),
         _ => Err(format!("invalid --type: {v}")),
     }
 }
@@ -142,9 +148,11 @@ fn detect_kind(path: &Path) -> Option<Kind> {
         "kicad_mod" => Some(Kind::Footprint),
         "kicad_sch" => Some(Kind::Schematic),
         "kicad_sym" => Some(Kind::Symbol),
+        "kicad_wks" => Some(Kind::Worksheet),
         "kicad_dru" => Some(Kind::Dru),
         "kicad_pro" => Some(Kind::Project),
         _ if name == "fp-lib-table" => Some(Kind::FpLibTable),
+        _ if name == "sym-lib-table" => Some(Kind::SymLibTable),
         _ => None,
     }
 }
@@ -1157,6 +1165,32 @@ fn inspect_fplib(opts: &Opts) -> Result<(), String> {
     Ok(())
 }
 
+fn inspect_symlib(opts: &Opts) -> Result<(), String> {
+    let doc = SymLibTableFile::read(&opts.path).map_err(|e| e.to_string())?;
+    let fields = fplib_fields(&doc);
+    emit_fields("symlib", &opts.path, &fields, opts.as_json);
+    if opts.show_unknown {
+        for n in &doc.ast().unknown_nodes {
+            println!(
+                "unknown: head={:?} span={}..{}",
+                n.head, n.span.start, n.span.end
+            );
+        }
+    }
+    if opts.show_cst {
+        println!("--- cst (lossless) ---\n{}", doc.cst().to_lossless_string());
+    }
+    if opts.show_canonical {
+        let out = temp_out("inspect_symlib", "table");
+        doc.write_mode(&out, WriteMode::Canonical)
+            .map_err(|e| e.to_string())?;
+        let s = std::fs::read_to_string(&out).map_err(|e| e.to_string())?;
+        let _ = std::fs::remove_file(out);
+        println!("--- canonical ---\n{s}");
+    }
+    Ok(())
+}
+
 fn inspect_dru(opts: &Opts) -> Result<(), String> {
     let doc = DesignRulesFile::read(&opts.path).map_err(|e| e.to_string())?;
     let fields = dru_fields(&doc);
@@ -1211,6 +1245,37 @@ fn inspect_project(opts: &Opts) -> Result<(), String> {
     Ok(())
 }
 
+fn inspect_worksheet(opts: &Opts) -> Result<(), String> {
+    let doc = WorksheetFile::read(&opts.path).map_err(|e| e.to_string())?;
+    let fields = worksheet_fields(&doc);
+    emit_fields("worksheet", &opts.path, &fields, opts.as_json);
+    if opts.show_unknown {
+        for n in &doc.ast().unknown_nodes {
+            println!(
+                "unknown: head={:?} span={}..{}",
+                n.head, n.span.start, n.span.end
+            );
+        }
+    }
+    if opts.show_diagnostics {
+        for d in doc.diagnostics() {
+            println!("diagnostic: [{:?}] {} {}", d.severity, d.code, d.message);
+        }
+    }
+    if opts.show_cst {
+        println!("--- cst (lossless) ---\n{}", doc.cst().to_lossless_string());
+    }
+    if opts.show_canonical {
+        let out = temp_out("inspect_wks", "kicad_wks");
+        doc.write_mode(&out, WriteMode::Canonical)
+            .map_err(|e| e.to_string())?;
+        let s = std::fs::read_to_string(&out).map_err(|e| e.to_string())?;
+        let _ = std::fs::remove_file(out);
+        println!("--- canonical ---\n{s}");
+    }
+    Ok(())
+}
+
 fn fplib_fields(doc: &kiutils_kicad::FpLibTableDocument) -> Vec<InspectField> {
     let ast = doc.ast();
     vec![
@@ -1219,6 +1284,16 @@ fn fplib_fields(doc: &kiutils_kicad::FpLibTableDocument) -> Vec<InspectField> {
             "library_count",
             json!(ast.library_count),
             ast.library_count.to_string(),
+        ),
+        field(
+            "disabled_library_count",
+            json!(ast.disabled_library_count),
+            ast.disabled_library_count.to_string(),
+        ),
+        field(
+            "first_library_name",
+            json!(ast.libraries.first().and_then(|l| l.name.clone())),
+            format!("{:?}", ast.libraries.first().and_then(|l| l.name.clone())),
         ),
         field(
             "unknown_count",
@@ -1291,6 +1366,54 @@ fn project_fields(doc: &kiutils_kicad::ProjectDocument) -> Vec<InspectField> {
     ]
 }
 
+fn worksheet_fields(doc: &kiutils_kicad::WorksheetDocument) -> Vec<InspectField> {
+    let ast = doc.ast();
+    vec![
+        field("version", json!(ast.version), format!("{:?}", ast.version)),
+        field(
+            "generator",
+            json!(ast.generator),
+            format!("{:?}", ast.generator),
+        ),
+        field(
+            "generator_version",
+            json!(ast.generator_version),
+            format!("{:?}", ast.generator_version),
+        ),
+        field("has_setup", json!(ast.has_setup), ast.has_setup.to_string()),
+        field(
+            "line_count",
+            json!(ast.line_count),
+            ast.line_count.to_string(),
+        ),
+        field(
+            "rect_count",
+            json!(ast.rect_count),
+            ast.rect_count.to_string(),
+        ),
+        field(
+            "tbtext_count",
+            json!(ast.tbtext_count),
+            ast.tbtext_count.to_string(),
+        ),
+        field(
+            "polygon_count",
+            json!(ast.polygon_count),
+            ast.polygon_count.to_string(),
+        ),
+        field(
+            "unknown_count",
+            json!(ast.unknown_nodes.len()),
+            ast.unknown_nodes.len().to_string(),
+        ),
+        field(
+            "diagnostic_count",
+            json!(doc.diagnostics().len()),
+            doc.diagnostics().len().to_string(),
+        ),
+    ]
+}
+
 fn temp_out(prefix: &str, ext: &str) -> PathBuf {
     let nanos = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -1300,5 +1423,5 @@ fn temp_out(prefix: &str, ext: &str) -> PathBuf {
 }
 
 fn usage() -> String {
-    "usage: kiutils-inspect <path> [--type auto|pcb|footprint|schematic|sch|symbol|fplib|dru|project] [--json] [--show-cst] [--show-canonical] [--show-unknown] [--show-diagnostics]".to_string()
+    "usage: kiutils-inspect <path> [--type auto|pcb|footprint|schematic|sch|symbol|fplib|symlib|dru|project|worksheet|wks] [--json] [--show-cst] [--show-canonical] [--show-unknown] [--show-diagnostics]".to_string()
 }

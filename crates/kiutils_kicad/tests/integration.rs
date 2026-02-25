@@ -4,7 +4,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use kiutils_kicad::{
     DesignRulesFile, Error, FootprintFile, FpLibTableFile, PcbFile, ProjectFile, SchematicFile,
-    SymbolLibFile, WriteMode,
+    SymLibTableFile, SymbolLibFile, WorksheetFile, WriteMode,
 };
 
 fn fixture(name: &str) -> PathBuf {
@@ -66,6 +66,22 @@ fn libtable_fixture_unknown_and_canonical() {
     doc.write_mode(&out, WriteMode::Canonical).expect("write");
     let got = fs::read_to_string(&out).expect("read out");
     assert!(got.contains("fp_lib_table"));
+
+    let _ = fs::remove_file(out);
+}
+
+#[test]
+fn symlib_fixture_unknown_and_canonical() {
+    let src_path = fixture("sym-lib-table");
+
+    let doc = SymLibTableFile::read(&src_path).expect("parse");
+    assert_eq!(doc.ast().library_count, 1);
+    assert_eq!(doc.ast().unknown_nodes.len(), 1);
+
+    let out = tmp_file("symlib", "table");
+    doc.write_mode(&out, WriteMode::Canonical).expect("write");
+    let got = fs::read_to_string(&out).expect("read out");
+    assert!(got.contains("sym_lib_table"));
 
     let _ = fs::remove_file(out);
 }
@@ -140,6 +156,25 @@ fn schematic_fixture_roundtrip_lossless_and_unknown() {
 }
 
 #[test]
+fn worksheet_fixture_roundtrip_lossless_and_unknown() {
+    let src_path = fixture("sample.kicad_wks");
+    let src = fs::read_to_string(&src_path).expect("read fixture");
+
+    let doc = WorksheetFile::read(&src_path).expect("parse");
+    assert_eq!(doc.ast().line_count, 1);
+    assert_eq!(doc.ast().rect_count, 1);
+    assert_eq!(doc.ast().tbtext_count, 1);
+    assert_eq!(doc.ast().unknown_nodes.len(), 1);
+
+    let out = tmp_file("wks", "kicad_wks");
+    doc.write(&out).expect("write");
+    let got = fs::read_to_string(&out).expect("read out");
+    assert_eq!(got, src);
+
+    let _ = fs::remove_file(out);
+}
+
+#[test]
 fn pcb_multi_unknown_roundtrip_lossless() {
     let src = "(kicad_pcb (version 20260101) (generator pcbnew) (mystery_a 1) (mystery_b \"x\"))\n";
     let path = tmp_file("pcb_multi_unknown", "kicad_pcb");
@@ -200,6 +235,20 @@ fn schematic_rejects_malformed_root() {
 }
 
 #[test]
+fn worksheet_rejects_malformed_root() {
+    let path = tmp_file("worksheet_bad_root", "kicad_wks");
+    fs::write(&path, "(foo (version 20260101))\n").expect("write fixture");
+
+    let err = WorksheetFile::read(&path).expect_err("must fail");
+    match err {
+        Error::Validation(msg) => assert!(msg.contains("expected root token `kicad_wks`")),
+        other => panic!("unexpected error: {other}"),
+    }
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
 fn fplib_rejects_malformed_root() {
     let path = tmp_file("fplib_bad_root", "table");
     fs::write(&path, "(sym_lib_table (version 7))\n").expect("write fixture");
@@ -207,6 +256,20 @@ fn fplib_rejects_malformed_root() {
     let err = FpLibTableFile::read(&path).expect_err("must fail");
     match err {
         Error::Validation(msg) => assert!(msg.contains("expected root token `fp_lib_table`")),
+        other => panic!("unexpected error: {other}"),
+    }
+
+    let _ = fs::remove_file(path);
+}
+
+#[test]
+fn symlib_rejects_malformed_root() {
+    let path = tmp_file("symlib_bad_root", "table");
+    fs::write(&path, "(fp_lib_table (version 7))\n").expect("write fixture");
+
+    let err = SymLibTableFile::read(&path).expect_err("must fail");
+    match err {
+        Error::Validation(msg) => assert!(msg.contains("expected root token `sym_lib_table`")),
         other => panic!("unexpected error: {other}"),
     }
 

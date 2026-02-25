@@ -175,6 +175,7 @@ fn inspect_fplib_json_contract_smoke() {
         o.get("path"),
         Some(&Value::String(path.to_string_lossy().to_string()))
     );
+    assert_eq!(o.get("first_library_name"), Some(&Value::from("A")));
     assert_eq!(o.get("library_count"), Some(&Value::from(1)));
     assert_eq!(o.get("unknown_count"), Some(&Value::from(1)));
 }
@@ -186,6 +187,41 @@ fn inspect_fplib_text_contract_smoke() {
 
     assert!(out.contains("kind: fplib"));
     assert!(out.contains(&format!("path: {}", path.display())));
+    assert!(out.contains("first_library_name: Some(\"A\")"));
+    assert!(out.contains("library_count: 1"));
+    assert!(out.contains("unknown_count: 1"));
+}
+
+#[test]
+fn inspect_symlib_json_contract_smoke() {
+    let path = fixture("sym-lib-table");
+    let out = run_inspect(&[
+        path.to_str().expect("path str"),
+        "--type",
+        "symlib",
+        "--json",
+    ]);
+    let v: Value = serde_json::from_str(out.trim()).expect("json output");
+    let o = v.as_object().expect("json object");
+
+    assert_eq!(o.get("kind"), Some(&Value::String("symlib".to_string())));
+    assert_eq!(
+        o.get("path"),
+        Some(&Value::String(path.to_string_lossy().to_string()))
+    );
+    assert_eq!(o.get("first_library_name"), Some(&Value::from("S")));
+    assert_eq!(o.get("library_count"), Some(&Value::from(1)));
+    assert_eq!(o.get("unknown_count"), Some(&Value::from(1)));
+}
+
+#[test]
+fn inspect_symlib_text_contract_smoke() {
+    let path = fixture("sym-lib-table");
+    let out = run_inspect(&[path.to_str().expect("path str"), "--type", "symlib"]);
+
+    assert!(out.contains("kind: symlib"));
+    assert!(out.contains(&format!("path: {}", path.display())));
+    assert!(out.contains("first_library_name: Some(\"S\")"));
     assert!(out.contains("library_count: 1"));
     assert!(out.contains("unknown_count: 1"));
 }
@@ -254,4 +290,40 @@ fn inspect_project_text_contract_smoke() {
     assert!(out.contains(&format!("path: {}", path.display())));
     assert!(out.contains("meta_version: Some(3)"));
     assert!(out.contains("unknown_field_count: 1"));
+}
+
+#[test]
+fn inspect_worksheet_json_contract_smoke() {
+    let path = fixture("sample.kicad_wks");
+    let out = run_inspect(&[
+        path.to_str().expect("path str"),
+        "--type",
+        "worksheet",
+        "--json",
+    ]);
+    let v: Value = serde_json::from_str(out.trim()).expect("json output");
+    let o = v.as_object().expect("json object");
+
+    assert_eq!(o.get("kind"), Some(&Value::String("worksheet".to_string())));
+    assert_eq!(
+        o.get("path"),
+        Some(&Value::String(path.to_string_lossy().to_string()))
+    );
+    assert_eq!(o.get("line_count"), Some(&Value::from(1)));
+    assert_eq!(o.get("rect_count"), Some(&Value::from(1)));
+    assert_eq!(o.get("tbtext_count"), Some(&Value::from(1)));
+    assert_eq!(o.get("unknown_count"), Some(&Value::from(1)));
+}
+
+#[test]
+fn inspect_worksheet_text_contract_smoke() {
+    let path = fixture("sample.kicad_wks");
+    let out = run_inspect(&[path.to_str().expect("path str"), "--type", "worksheet"]);
+
+    assert!(out.contains("kind: worksheet"));
+    assert!(out.contains(&format!("path: {}", path.display())));
+    assert!(out.contains("line_count: 1"));
+    assert!(out.contains("rect_count: 1"));
+    assert!(out.contains("tbtext_count: 1"));
+    assert!(out.contains("unknown_count: 1"));
 }

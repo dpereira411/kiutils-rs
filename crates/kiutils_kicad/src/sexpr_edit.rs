@@ -103,16 +103,23 @@ pub(crate) fn upsert_scalar(items: &mut Vec<Node>, head: &str, value: Node, skip
     )
 }
 
-pub(crate) fn upsert_child_scalar(items: &mut Vec<Node>, head: &str, value: Node) -> bool {
-    upsert_scalar(items, head, value, 1)
-}
-
 pub(crate) fn upsert_section_child_scalar(
     items: &mut Vec<Node>,
     section_head: &str,
     section_skip: usize,
     child_head: &str,
     child_value: Node,
+) -> bool {
+    let node = list_node(vec![atom_symbol(child_head.to_string()), child_value]);
+    upsert_section_child_node(items, section_head, section_skip, child_head, node)
+}
+
+pub(crate) fn upsert_section_child_node(
+    items: &mut Vec<Node>,
+    section_head: &str,
+    section_skip: usize,
+    child_head: &str,
+    child_node: Node,
 ) -> bool {
     let section_idx = if let Some(idx) = child_index(items, section_head, section_skip) {
         idx
@@ -128,7 +135,7 @@ pub(crate) fn upsert_section_child_scalar(
     else {
         return false;
     };
-    upsert_child_scalar(section_items, child_head, child_value)
+    upsert_node(section_items, child_head, child_node, 1)
 }
 
 pub(crate) fn property_node(key: &str, value: &str) -> Node {

@@ -8,8 +8,10 @@ Scope (v1):
 - `.kicad_sch`
 - `.kicad_sym`
 - `fp-lib-table`
+- `sym-lib-table`
 - `.kicad_dru`
 - `.kicad_pro`
+- `.kicad_wks`
 
 Current status:
 - Workspace with two crates:
@@ -17,8 +19,10 @@ Current status:
   - `kiutils_kicad`: typed KiCad API layer
 - Implemented: initial `PcbFile::read` path with lossless write-back and tests
 - Implemented: typed readers for PCB/footprint/lib-table/design-rules/project
+- Implemented: typed reader for symbol library tables (`sym-lib-table`)
 - Implemented: typed reader for schematics (`.kicad_sch`)
 - Implemented: typed reader for symbol libraries (`.kicad_sym`)
+- Implemented: typed reader for worksheets (`.kicad_wks`)
 - Implemented: unknown token/field capture and `WriteMode::{Lossless, Canonical}`
 
 Design goals:
@@ -59,7 +63,7 @@ cargo run -p kiutils_kicad --bin kiutils-inspect -- <path>
 ```
 
 Flags:
-- `--type auto|pcb|footprint|schematic|sch|symbol|fplib|dru|project`
+- `--type auto|pcb|footprint|schematic|sch|symbol|fplib|symlib|dru|project|worksheet|wks`
 - `--json`
 - `--show-cst`
 - `--show-canonical`
@@ -179,6 +183,27 @@ cargo run -p kiutils_kicad --example symbol_roundtrip -- input.kicad_sym output.
 cargo run -p kiutils_kicad --example symbol_corpus_roundtrip -- ~/Engineering/demos crates/kiutils_kicad/examples/generated/symbols
 ```
 
+## Symbol-lib-table read/modify/write
+
+```rust
+use kiutils_kicad::SymLibTableFile;
+
+let mut doc = SymLibTableFile::read("sym-lib-table")?;
+doc.set_version(7)
+    .rename_library("Base", "BaseEdited")
+    .add_library("Extra", "${KIPRJMOD}/Extra.kicad_sym")
+    .remove_library("Obsolete");
+
+doc.write("sym-lib-table.out")?;
+```
+
+Runnable examples:
+
+```bash
+cargo run -p kiutils_kicad --example symlib_roundtrip -- sym-lib-table sym-lib-table.out
+cargo run -p kiutils_kicad --example symlib_corpus_roundtrip -- ~/Engineering/demos crates/kiutils_kicad/examples/generated/symlib
+```
+
 ## Design-rules read/modify/write
 
 ```rust
@@ -198,6 +223,28 @@ Runnable examples:
 ```bash
 cargo run -p kiutils_kicad --example dru_roundtrip -- input.kicad_dru output.kicad_dru
 cargo run -p kiutils_kicad --example dru_corpus_roundtrip -- ~/Engineering/demos crates/kiutils_kicad/examples/generated/dru
+```
+
+## Worksheet read/modify/write
+
+```rust
+use kiutils_kicad::WorksheetFile;
+
+let mut doc = WorksheetFile::read("input.kicad_wks")?;
+doc.set_version(20260101)
+    .set_generator("pl_editor")
+    .set_generator_version("9.0")
+    .set_setup_line_width(0.2)
+    .set_setup_text_size(1.7, 1.8);
+
+doc.write("output.kicad_wks")?;
+```
+
+Runnable examples:
+
+```bash
+cargo run -p kiutils_kicad --example worksheet_roundtrip -- input.kicad_wks output.kicad_wks
+cargo run -p kiutils_kicad --example worksheet_corpus_roundtrip -- ~/Engineering/demos crates/kiutils_kicad/examples/generated/worksheets
 ```
 
 ## License
