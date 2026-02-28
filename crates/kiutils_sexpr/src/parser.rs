@@ -25,9 +25,19 @@ pub enum Atom {
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum Node {
     /// Parenthesized list.
-    List { items: Vec<Node>, span: Span },
+    List {
+        /// Child nodes contained inside the parentheses.
+        items: Vec<Node>,
+        /// Byte span of the full list including `(` and `)`.
+        span: Span,
+    },
     /// Atomic token.
-    Atom { atom: Atom, span: Span },
+    Atom {
+        /// Parsed atom payload.
+        atom: Atom,
+        /// Byte span of the atom token.
+        span: Span,
+    },
 }
 
 /// Parsed CST document plus the original source buffer.
@@ -88,6 +98,7 @@ fn fmt_node(node: &Node, out: &mut String) {
     }
 }
 
+/// Parsing mode for top-level form expectations.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ParseMode {
     /// Exactly one top-level form required.
