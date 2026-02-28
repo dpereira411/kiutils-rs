@@ -1,19 +1,19 @@
 [package]
-name = "kiutils-kicad"
+name = "kiutils_kicad"
 version = "0.1.0"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
 
 description = "Typed KiCad document model and codecs for seamless, lossless edit round-trips"
-documentation = "https://docs.rs/kiutils-kicad"
+documentation = "https://docs.rs/kiutils_kicad"
 keywords = ["kicad", "eda", "bindings", "parser", "lossless"]
 categories = ["development-tools", "api-bindings", "parser-implementations"]
 
 [dependencies]
 thiserror.workspace = true
 serde_json.workspace = true
-kiutils_sexpr = { package = "kiutils-sexpr", version = "0.1.0", path = "../kiutils_sexpr" }
+kiutils_sexpr = { package = "kiutils_sexpr", version = "0.1.0", path = "../kiutils_sexpr" }
 serde = { workspace = true, optional = true }
 rayon = { version = "1.10", optional = true }
 
