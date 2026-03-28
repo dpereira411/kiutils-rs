@@ -3,7 +3,7 @@ use std::path::Path;
 
 use kiutils_sexpr::{parse_one, CstDocument, Node};
 
-use crate::diagnostic::Diagnostic;
+use crate::diagnostic::{Diagnostic, Severity};
 use crate::sexpr_edit::{
     atom_quoted, atom_symbol, ensure_root_head_any, list_node, mutate_root_and_refresh,
     upsert_scalar,
@@ -210,7 +210,7 @@ impl LibTableDocument {
             &mut self.diagnostics,
             mutate,
             |cst| parse_ast(cst, kind),
-            |_cst, _ast| Vec::new(),
+            |_cst, ast| collect_lib_table_diagnostics(ast),
         );
         self.ast_dirty = false;
         self
@@ -237,12 +237,56 @@ fn read_kind<P: AsRef<Path>>(path: P, kind: LibTableKind) -> Result<LibTableDocu
     let cst = parse_one(&raw)?;
     ensure_root_head_any(&cst, &[kind.root_token()])?;
     let ast = parse_ast(&cst, kind);
+    let diagnostics = collect_lib_table_diagnostics(&ast);
     Ok(LibTableDocument {
         ast,
         cst,
-        diagnostics: Vec::new(),
+        diagnostics,
         ast_dirty: false,
     })
+}
+
+fn collect_lib_table_diagnostics(ast: &LibTableAst) -> Vec<Diagnostic> {
+    let mut diagnostics = Vec::new();
+    let mut seen_names = std::collections::HashSet::new();
+
+    for lib in &ast.libraries {
+        // Duplicate name check
+        if let Some(name) = &lib.name {
+            if !seen_names.insert(name.clone()) {
+                diagnostics.push(Diagnostic {
+                    severity: Severity::Warning,
+                    code: "lib_table_duplicate_name",
+                    message: format!("duplicate library name '{name}' in lib table"),
+                    span: None,
+                    hint: Some(format!("remove or rename one of the '{name}' entries")),
+                });
+            }
+        } else {
+            diagnostics.push(Diagnostic {
+                severity: Severity::Warning,
+                code: "lib_table_missing_name",
+                message: "library entry has no name".to_string(),
+                span: None,
+                hint: Some("add a (name ...) field to this library entry".to_string()),
+            });
+        }
+
+        // Empty URI check
+        let uri_is_empty = lib.uri.as_ref().map_or(true, |s| s.is_empty());
+        if uri_is_empty {
+            let label = lib.name.as_deref().unwrap_or("<unnamed>");
+            diagnostics.push(Diagnostic {
+                severity: Severity::Warning,
+                code: "lib_table_empty_uri",
+                message: format!("library '{label}' has an empty URI"),
+                span: None,
+                hint: Some("set a valid URI or remove the library entry".to_string()),
+            });
+        }
+    }
+
+    diagnostics
 }
 
 fn parse_ast(cst: &CstDocument, kind: LibTableKind) -> LibTableAst {

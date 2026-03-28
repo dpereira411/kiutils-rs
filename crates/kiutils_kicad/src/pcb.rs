@@ -6,16 +6,17 @@ use kiutils_sexpr::{parse_one, Atom, CstDocument, Node};
 use crate::diagnostic::Diagnostic;
 use crate::sections::{parse_paper, parse_title_block, ParsedPaper, ParsedTitleBlock};
 use crate::sexpr_edit::{
-    atom_quoted, atom_symbol, ensure_root_head_any, mutate_root_and_refresh, paper_standard_node,
-    paper_user_node, remove_property as remove_property_node, upsert_node,
-    upsert_property_preserve_tail, upsert_scalar, upsert_section_child_scalar,
+    atom_quoted, atom_symbol, ensure_root_head_any, find_property_index, list_node,
+    mutate_root_and_refresh, paper_standard_node, paper_user_node,
+    remove_property as remove_property_node, upsert_node, upsert_property_preserve_tail,
+    upsert_scalar, upsert_section_child_scalar,
 };
 use crate::sexpr_utils::{
     atom_as_f64, atom_as_i32, atom_as_string, head_of, second_atom_bool, second_atom_f64,
     second_atom_i32, second_atom_string,
 };
 use crate::version_diag::collect_version_diagnostics;
-use crate::{Error, UnknownNode, WriteMode};
+use crate::{Error, UnknownNode, VersionPolicy, WriteMode};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -295,6 +296,7 @@ pub struct PcbDocument {
     cst: CstDocument,
     diagnostics: Vec<Diagnostic>,
     ast_dirty: bool,
+    policy: VersionPolicy,
 }
 
 impl PcbDocument {
@@ -400,6 +402,141 @@ impl PcbDocument {
         self.mutate_root_items(|items| remove_property_node(items, &key, 1))
     }
 
+    /// Append a copper trace segment.
+    ///
+    /// `layer` is a KiCad layer name like `"F.Cu"` or `"B.Cu"`.
+    /// `net` is the integer net number (0 = unconnected).
+    pub fn add_trace<L: Into<String>>(
+        &mut self,
+        x1: f64,
+        y1: f64,
+        x2: f64,
+        y2: f64,
+        width: f64,
+        layer: L,
+        net: i32,
+    ) -> &mut Self {
+        let node = pcb_segment_node(x1, y1, x2, y2, width, &layer.into(), net);
+        self.mutate_root_items(|items| {
+            items.push(node);
+            true
+        })
+    }
+
+    /// Remove all trace segments whose start/end coordinates exactly match the given values.
+    pub fn remove_trace_at(&mut self, x1: f64, y1: f64, x2: f64, y2: f64) -> &mut Self {
+        self.mutate_root_items(|items| {
+            let before = items.len();
+            items.retain(|node| !segment_pts_match(node, x1, y1, x2, y2));
+            items.len() != before
+        })
+    }
+
+    /// Append a through-hole via between `"F.Cu"` and `"B.Cu"`.
+    ///
+    /// `size` is the via pad diameter; `drill` is the drill hole diameter (both in mm).
+    /// `net` is the integer net number.
+    pub fn add_via(&mut self, x: f64, y: f64, size: f64, drill: f64, net: i32) -> &mut Self {
+        let node = pcb_via_node(x, y, size, drill, net);
+        self.mutate_root_items(|items| {
+            items.push(node);
+            true
+        })
+    }
+
+    /// Append a minimal footprint placeholder.
+    ///
+    /// Creates a footprint with Reference and Value properties and no pads.
+    /// `lib_ref` is the library reference like `"Resistor_SMD:R_0603"`.
+    /// `layer` is `"F.Cu"` or `"B.Cu"`.
+    pub fn add_footprint<S: Into<String>>(
+        &mut self,
+        lib_ref: S,
+        x: f64,
+        y: f64,
+        layer: S,
+        reference: S,
+        value: S,
+    ) -> &mut Self {
+        let node = pcb_footprint_node(
+            &lib_ref.into(),
+            x,
+            y,
+            &layer.into(),
+            &reference.into(),
+            &value.into(),
+        );
+        self.mutate_root_items(|items| {
+            items.push(node);
+            true
+        })
+    }
+
+    /// Move a footprint to a new position, preserving all its internal structure.
+    ///
+    /// Updates the `(at x y [rotation])` node of the first footprint whose
+    /// `Reference` property matches `reference`.  If `rotation` is `Some`, the
+    /// rotation is set to that value; if `None`, any existing rotation is left
+    /// unchanged.  Returns `self` unchanged when no matching footprint is found.
+    pub fn move_footprint<R: Into<String>>(
+        &mut self,
+        reference: R,
+        x: f64,
+        y: f64,
+        rotation: Option<f64>,
+    ) -> &mut Self {
+        let reference = reference.into();
+        self.mutate_root_items(|items| {
+            for node in items.iter_mut() {
+                if !footprint_has_reference(node, &reference) {
+                    continue;
+                }
+                let Node::List {
+                    items: fp_items, ..
+                } = node
+                else {
+                    continue;
+                };
+                for child in fp_items.iter_mut() {
+                    if head_of(child) != Some("at") {
+                        continue;
+                    }
+                    let Node::List {
+                        items: at_items, ..
+                    } = child
+                    else {
+                        continue;
+                    };
+                    if let Some(xi) = at_items.get_mut(1) {
+                        *xi = atom_symbol(pcb_fmt(x));
+                    }
+                    if let Some(yi) = at_items.get_mut(2) {
+                        *yi = atom_symbol(pcb_fmt(y));
+                    }
+                    if let Some(rot) = rotation {
+                        if at_items.len() >= 4 {
+                            at_items[3] = atom_symbol(pcb_fmt(rot));
+                        } else {
+                            at_items.push(atom_symbol(pcb_fmt(rot)));
+                        }
+                    }
+                    return true;
+                }
+            }
+            false
+        })
+    }
+
+    /// Remove all footprints whose `Reference` property matches `reference`.
+    pub fn remove_footprint<R: Into<String>>(&mut self, reference: R) -> &mut Self {
+        let reference = reference.into();
+        self.mutate_root_items(|items| {
+            let before = items.len();
+            items.retain(|node| !footprint_has_reference(node, &reference));
+            items.len() != before
+        })
+    }
+
     pub fn cst(&self) -> &CstDocument {
         &self.cst
     }
@@ -429,13 +566,14 @@ impl PcbDocument {
     where
         F: FnOnce(&mut Vec<Node>) -> bool,
     {
+        let policy = self.policy;
         mutate_root_and_refresh(
             &mut self.cst,
             &mut self.ast,
             &mut self.diagnostics,
             mutate,
             parse_ast,
-            |_cst, ast| collect_diagnostics(ast.version),
+            move |_cst, ast| collect_diagnostics(ast.version, &policy),
         );
         self.ast_dirty = false;
         self
@@ -446,24 +584,32 @@ pub struct PcbFile;
 
 impl PcbFile {
     pub fn read<P: AsRef<Path>>(path: P) -> Result<PcbDocument, Error> {
+        Self::read_with_policy(path, VersionPolicy::default())
+    }
+
+    pub fn read_with_policy<P: AsRef<Path>>(
+        path: P,
+        policy: VersionPolicy,
+    ) -> Result<PcbDocument, Error> {
         let raw = fs::read_to_string(path)?;
         let cst = parse_one(&raw)?;
         ensure_root_head_any(&cst, &["kicad_pcb"])?;
 
         let ast = parse_ast(&cst);
-        let diagnostics = collect_diagnostics(ast.version);
+        let diagnostics = collect_diagnostics(ast.version, &policy);
 
         Ok(PcbDocument {
             ast,
             cst,
             diagnostics,
             ast_dirty: false,
+            policy,
         })
     }
 }
 
-fn collect_diagnostics(version: Option<i32>) -> Vec<Diagnostic> {
-    collect_version_diagnostics(version)
+fn collect_diagnostics(version: Option<i32>, policy: &VersionPolicy) -> Vec<Diagnostic> {
+    collect_version_diagnostics(version, policy)
 }
 
 fn parse_ast(cst: &CstDocument) -> PcbAst {
@@ -1395,6 +1541,177 @@ fn parse_xy_and_angle(node: &Node) -> (Option<[f64; 2]>, Option<f64>) {
     }
 }
 
+// ─── Private structural-editing helpers ──────────────────────────────────────
+
+fn pcb_generate_uuid() -> String {
+    use std::time::SystemTime;
+    let t = SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .unwrap_or_default();
+    let secs = t.as_secs();
+    let nanos = t.subsec_nanos();
+    format!(
+        "{:08x}-{:04x}-{:04x}-{:04x}-{:012x}",
+        secs & 0xffff_ffff,
+        (secs >> 16) & 0xffff,
+        nanos & 0xffff,
+        (nanos >> 16) & 0xffff,
+        nanos as u64 | (secs << 20)
+    )
+}
+
+fn pcb_fmt(v: f64) -> String {
+    if v.fract() == 0.0 && v.abs() < 1e15 {
+        format!("{}", v as i64)
+    } else {
+        format!("{v}")
+    }
+}
+
+fn pcb_segment_node(x1: f64, y1: f64, x2: f64, y2: f64, width: f64, layer: &str, net: i32) -> Node {
+    list_node(vec![
+        atom_symbol("segment"),
+        list_node(vec![
+            atom_symbol("start"),
+            atom_symbol(pcb_fmt(x1)),
+            atom_symbol(pcb_fmt(y1)),
+        ]),
+        list_node(vec![
+            atom_symbol("end"),
+            atom_symbol(pcb_fmt(x2)),
+            atom_symbol(pcb_fmt(y2)),
+        ]),
+        list_node(vec![atom_symbol("width"), atom_symbol(pcb_fmt(width))]),
+        list_node(vec![atom_symbol("layer"), atom_quoted(layer)]),
+        list_node(vec![atom_symbol("net"), atom_symbol(net.to_string())]),
+        list_node(vec![atom_symbol("uuid"), atom_quoted(pcb_generate_uuid())]),
+    ])
+}
+
+fn pcb_via_node(x: f64, y: f64, size: f64, drill: f64, net: i32) -> Node {
+    list_node(vec![
+        atom_symbol("via"),
+        list_node(vec![
+            atom_symbol("at"),
+            atom_symbol(pcb_fmt(x)),
+            atom_symbol(pcb_fmt(y)),
+        ]),
+        list_node(vec![atom_symbol("size"), atom_symbol(pcb_fmt(size))]),
+        list_node(vec![atom_symbol("drill"), atom_symbol(pcb_fmt(drill))]),
+        list_node(vec![
+            atom_symbol("layers"),
+            atom_quoted("F.Cu"),
+            atom_quoted("B.Cu"),
+        ]),
+        list_node(vec![atom_symbol("net"), atom_symbol(net.to_string())]),
+        list_node(vec![atom_symbol("uuid"), atom_quoted(pcb_generate_uuid())]),
+    ])
+}
+
+fn pcb_footprint_property_node(key: &str, value: &str, layer: &str) -> Node {
+    list_node(vec![
+        atom_symbol("property"),
+        atom_quoted(key),
+        atom_quoted(value),
+        list_node(vec![
+            atom_symbol("at"),
+            atom_symbol("0"),
+            atom_symbol("0"),
+            atom_symbol("0"),
+        ]),
+        list_node(vec![atom_symbol("layer"), atom_quoted(layer)]),
+        list_node(vec![atom_symbol("uuid"), atom_quoted(pcb_generate_uuid())]),
+    ])
+}
+
+fn pcb_footprint_node(
+    lib_ref: &str,
+    x: f64,
+    y: f64,
+    layer: &str,
+    reference: &str,
+    value: &str,
+) -> Node {
+    list_node(vec![
+        atom_symbol("footprint"),
+        atom_quoted(lib_ref),
+        list_node(vec![atom_symbol("layer"), atom_quoted(layer)]),
+        list_node(vec![atom_symbol("uuid"), atom_quoted(pcb_generate_uuid())]),
+        list_node(vec![
+            atom_symbol("at"),
+            atom_symbol(pcb_fmt(x)),
+            atom_symbol(pcb_fmt(y)),
+        ]),
+        pcb_footprint_property_node(
+            "Reference",
+            reference,
+            if layer == "B.Cu" {
+                "B.SilkS"
+            } else {
+                "F.SilkS"
+            },
+        ),
+        pcb_footprint_property_node(
+            "Value",
+            value,
+            if layer == "B.Cu" { "B.Fab" } else { "F.Fab" },
+        ),
+    ])
+}
+
+fn segment_pts_match(node: &Node, x1: f64, y1: f64, x2: f64, y2: f64) -> bool {
+    (|| -> Option<bool> {
+        if head_of(node) != Some("segment") {
+            return Some(false);
+        }
+        let Node::List { items, .. } = node else {
+            return Some(false);
+        };
+        let parse_pair = |head: &str| -> Option<(f64, f64)> {
+            let child = items.iter().skip(1).find(|n| head_of(n) == Some(head))?;
+            let Node::List {
+                items: child_items, ..
+            } = child
+            else {
+                return None;
+            };
+            let x = child_items
+                .get(1)
+                .and_then(atom_as_string)?
+                .parse::<f64>()
+                .ok()?;
+            let y = child_items
+                .get(2)
+                .and_then(atom_as_string)?
+                .parse::<f64>()
+                .ok()?;
+            Some((x, y))
+        };
+        let start = parse_pair("start")?;
+        let end = parse_pair("end")?;
+        Some(start == (x1, y1) && end == (x2, y2))
+    })()
+    .unwrap_or(false)
+}
+
+fn footprint_has_reference(node: &Node, reference: &str) -> bool {
+    if head_of(node) != Some("footprint") {
+        return false;
+    }
+    let Node::List { items, .. } = node else {
+        return false;
+    };
+    if let Some(idx) = find_property_index(items, "Reference", 1) {
+        if let Some(Node::List {
+            items: prop_items, ..
+        }) = items.get(idx)
+        {
+            return prop_items.get(2).and_then(atom_as_string).as_deref() == Some(reference);
+        }
+    }
+    false
+}
+
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
@@ -1929,6 +2246,522 @@ mod tests {
         doc.write(&out).expect("write");
         let written = fs::read_to_string(&out).expect("read out");
         assert!(written.contains("(property \"Owner\" \"New\" (at 1 2 0))"));
+
+        let _ = fs::remove_file(path);
+        let _ = fs::remove_file(out);
+    }
+
+    const MINIMAL_PCB: &str = "(kicad_pcb (version 20260101) (generator pcbnew) (layers (0 \"F.Cu\" signal) (31 \"B.Cu\" signal)) (net 0 \"\") (net 1 \"GND\") (net 2 \"VCC\") (footprint \"Device:R\" (layer \"F.Cu\") (uuid \"fp-1\") (at 100 100) (property \"Reference\" \"R1\" (at 0 -1.5 0) (layer \"F.SilkS\") (uuid \"fp-ref-1\")) (property \"Value\" \"10k\" (at 0 1.5 0) (layer \"F.Fab\") (uuid \"fp-val-1\"))) (segment (start 100 100) (end 110 100) (width 0.25) (layer \"F.Cu\") (net 1) (uuid \"seg-1\")))\n";
+
+    // ─── Trace (segment) deep tests ───────────────────────────────────────────
+
+    #[test]
+    fn add_trace_fields_correct() {
+        let path = tmp_file("pcb_trace_fields");
+        fs::write(&path, MINIMAL_PCB).expect("write");
+        let mut doc = PcbFile::read(&path).expect("read");
+
+        doc.add_trace(10.5, 20.25, 30.5, 20.25, 0.127, "B.Cu", 2);
+
+        let segs = &doc.ast().segments;
+        let new_seg = segs
+            .iter()
+            .find(|s| s.start == Some([10.5, 20.25]) && s.end == Some([30.5, 20.25]))
+            .expect("added segment not found");
+
+        assert_eq!(new_seg.start, Some([10.5, 20.25]));
+        assert_eq!(new_seg.end, Some([30.5, 20.25]));
+        assert_eq!(new_seg.width, Some(0.127));
+        assert_eq!(new_seg.layer.as_deref(), Some("B.Cu"));
+        assert_eq!(new_seg.net, Some(2));
+
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn add_trace_fractional_coords_preserved() {
+        let path = tmp_file("pcb_trace_frac");
+        fs::write(&path, MINIMAL_PCB).expect("write");
+        let mut doc = PcbFile::read(&path).expect("read");
+
+        doc.add_trace(0.5, 0.25, 10.75, 0.25, 0.127, "F.Cu", 1);
+
+        let raw = doc.cst().to_canonical_string();
+        assert!(raw.contains("0.5"), "x1 0.5 not in output: {raw}");
+        assert!(raw.contains("0.25"), "y1 0.25 not in output: {raw}");
+        assert!(raw.contains("10.75"), "x2 10.75 not in output: {raw}");
+        assert!(raw.contains("0.127"), "width 0.127 not in output: {raw}");
+
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn remove_trace_noop_wrong_coords() {
+        let path = tmp_file("pcb_trace_noop");
+        fs::write(&path, MINIMAL_PCB).expect("write");
+        let mut doc = PcbFile::read(&path).expect("read");
+
+        assert_eq!(doc.ast().trace_segment_count, 1);
+        doc.remove_trace_at(999.0, 999.0, 888.0, 888.0);
+        assert_eq!(
+            doc.ast().trace_segment_count,
+            1,
+            "count should not change on no match"
+        );
+
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn remove_trace_specificity() {
+        let path = tmp_file("pcb_trace_specific");
+        fs::write(&path, MINIMAL_PCB).expect("write");
+        let mut doc = PcbFile::read(&path).expect("read");
+
+        doc.add_trace(0.0, 0.0, 10.0, 0.0, 0.25, "F.Cu", 1);
+        doc.add_trace(20.0, 0.0, 30.0, 0.0, 0.25, "F.Cu", 1);
+        assert_eq!(doc.ast().trace_segment_count, 3);
+
+        doc.remove_trace_at(0.0, 0.0, 10.0, 0.0);
+        assert_eq!(doc.ast().trace_segment_count, 2);
+
+        // the second added trace must still be there
+        let segs = &doc.ast().segments;
+        assert!(
+            segs.iter()
+                .any(|s| s.start == Some([20.0, 0.0]) && s.end == Some([30.0, 0.0])),
+            "remaining trace was incorrectly removed"
+        );
+        // the removed trace must be gone
+        assert!(
+            !segs
+                .iter()
+                .any(|s| s.start == Some([0.0, 0.0]) && s.end == Some([10.0, 0.0])),
+            "removed trace is still present"
+        );
+
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn add_remove_trace_restores_count() {
+        let path = tmp_file("pcb_trace_symmetric");
+        fs::write(&path, MINIMAL_PCB).expect("write");
+        let mut doc = PcbFile::read(&path).expect("read");
+
+        let original_count = doc.ast().trace_segment_count;
+        doc.add_trace(5.0, 5.0, 15.0, 5.0, 0.25, "F.Cu", 1);
+        assert_eq!(doc.ast().trace_segment_count, original_count + 1);
+        doc.remove_trace_at(5.0, 5.0, 15.0, 5.0);
+        assert_eq!(doc.ast().trace_segment_count, original_count);
+
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn add_trace_survives_write_reread() {
+        let path = tmp_file("pcb_trace_reread");
+        fs::write(&path, MINIMAL_PCB).expect("write");
+        let mut doc = PcbFile::read(&path).expect("read");
+
+        doc.add_trace(1.5, 2.5, 11.5, 2.5, 0.3, "B.Cu", 2);
+        doc.write(&path).expect("write");
+
+        let reread = PcbFile::read(&path).expect("reread");
+        let seg = reread
+            .ast()
+            .segments
+            .iter()
+            .find(|s| s.start == Some([1.5, 2.5]))
+            .expect("segment lost after write+read");
+        assert_eq!(seg.end, Some([11.5, 2.5]));
+        assert_eq!(seg.width, Some(0.3));
+        assert_eq!(seg.layer.as_deref(), Some("B.Cu"));
+        assert_eq!(seg.net, Some(2));
+
+        let _ = fs::remove_file(path);
+    }
+
+    // ─── Via deep tests ───────────────────────────────────────────────────────
+
+    #[test]
+    fn add_via_fields_correct() {
+        let path = tmp_file("pcb_via_fields");
+        fs::write(&path, MINIMAL_PCB).expect("write");
+        let mut doc = PcbFile::read(&path).expect("read");
+
+        doc.add_via(50.5, 60.5, 0.8, 0.4, 1);
+
+        let via = doc
+            .ast()
+            .vias
+            .iter()
+            .find(|v| v.at == Some([50.5, 60.5]))
+            .expect("via not found");
+
+        assert_eq!(via.at, Some([50.5, 60.5]));
+        assert_eq!(via.size, Some(0.8));
+        assert_eq!(via.drill, Some(0.4));
+        assert_eq!(via.net, Some(1));
+        assert!(
+            via.layers.contains(&"F.Cu".to_string()) && via.layers.contains(&"B.Cu".to_string()),
+            "expected F.Cu and B.Cu layers, got {:?}",
+            via.layers
+        );
+
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn add_via_survives_write_reread() {
+        let path = tmp_file("pcb_via_reread");
+        fs::write(&path, MINIMAL_PCB).expect("write");
+        let mut doc = PcbFile::read(&path).expect("read");
+
+        doc.add_via(5.0, 10.0, 1.0, 0.5, 2);
+        doc.write(&path).expect("write");
+
+        let reread = PcbFile::read(&path).expect("reread");
+        let via = reread
+            .ast()
+            .vias
+            .iter()
+            .find(|v| v.at == Some([5.0, 10.0]))
+            .expect("via lost after write+read");
+        assert_eq!(via.size, Some(1.0));
+        assert_eq!(via.drill, Some(0.5));
+        assert_eq!(via.net, Some(2));
+
+        let _ = fs::remove_file(path);
+    }
+
+    // ─── Footprint deep tests ─────────────────────────────────────────────────
+
+    #[test]
+    fn add_footprint_fields_correct() {
+        let path = tmp_file("pcb_fp_fields");
+        fs::write(&path, MINIMAL_PCB).expect("write");
+        let mut doc = PcbFile::read(&path).expect("read");
+
+        doc.add_footprint("Device:C", 120.5, 100.5, "F.Cu", "C1", "100nF");
+
+        let fp = doc
+            .ast()
+            .footprints
+            .iter()
+            .find(|f| f.reference.as_deref() == Some("C1"))
+            .expect("footprint not found");
+
+        assert_eq!(fp.lib_id.as_deref(), Some("Device:C"));
+        assert_eq!(fp.at, Some([120.5, 100.5]));
+        assert_eq!(fp.layer.as_deref(), Some("F.Cu"));
+        assert_eq!(fp.reference.as_deref(), Some("C1"));
+        assert_eq!(fp.value.as_deref(), Some("100nF"));
+
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn add_footprint_back_copper_uses_back_layers() {
+        let path = tmp_file("pcb_fp_back");
+        fs::write(&path, MINIMAL_PCB).expect("write");
+        let mut doc = PcbFile::read(&path).expect("read");
+
+        doc.add_footprint("Device:C", 120.0, 100.0, "B.Cu", "C1", "100nF");
+
+        let raw = doc.cst().to_canonical_string();
+        assert!(
+            raw.contains("B.SilkS"),
+            "expected B.SilkS for back-copper Reference layer"
+        );
+        assert!(
+            raw.contains("B.Fab"),
+            "expected B.Fab for back-copper Value layer"
+        );
+
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn add_footprint_front_copper_uses_front_layers() {
+        let path = tmp_file("pcb_fp_front");
+        fs::write(&path, MINIMAL_PCB).expect("write");
+        let mut doc = PcbFile::read(&path).expect("read");
+
+        doc.add_footprint("Device:R", 130.0, 100.0, "F.Cu", "R2", "4.7k");
+
+        let raw = doc.cst().to_canonical_string();
+        assert!(
+            raw.contains("F.SilkS"),
+            "expected F.SilkS for front-copper Reference layer"
+        );
+        assert!(
+            raw.contains("F.Fab"),
+            "expected F.Fab for front-copper Value layer"
+        );
+
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn remove_footprint_noop_wrong_ref() {
+        let path = tmp_file("pcb_fp_noop");
+        fs::write(&path, MINIMAL_PCB).expect("write");
+        let mut doc = PcbFile::read(&path).expect("read");
+
+        assert_eq!(doc.ast().footprint_count, 1);
+        doc.remove_footprint("Z99");
+        assert_eq!(
+            doc.ast().footprint_count,
+            1,
+            "count should not change on no match"
+        );
+
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn remove_footprint_specificity() {
+        let path = tmp_file("pcb_fp_specific");
+        fs::write(&path, MINIMAL_PCB).expect("write");
+        let mut doc = PcbFile::read(&path).expect("read");
+
+        doc.add_footprint("Device:C", 120.0, 100.0, "F.Cu", "C1", "100nF");
+        doc.add_footprint("Device:C", 140.0, 100.0, "F.Cu", "C2", "10uF");
+        assert_eq!(doc.ast().footprint_count, 3);
+
+        doc.remove_footprint("C1");
+        assert_eq!(doc.ast().footprint_count, 2);
+
+        let fps = &doc.ast().footprints;
+        assert!(
+            fps.iter().any(|f| f.reference.as_deref() == Some("C2")),
+            "C2 was incorrectly removed"
+        );
+        assert!(
+            !fps.iter().any(|f| f.reference.as_deref() == Some("C1")),
+            "C1 was not removed"
+        );
+
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn add_remove_footprint_restores_count() {
+        let path = tmp_file("pcb_fp_symmetric");
+        fs::write(&path, MINIMAL_PCB).expect("write");
+        let mut doc = PcbFile::read(&path).expect("read");
+
+        let original = doc.ast().footprint_count;
+        doc.add_footprint("Device:L", 150.0, 100.0, "F.Cu", "L1", "10uH");
+        assert_eq!(doc.ast().footprint_count, original + 1);
+        doc.remove_footprint("L1");
+        assert_eq!(doc.ast().footprint_count, original);
+
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn add_footprint_survives_write_reread() {
+        let path = tmp_file("pcb_fp_reread");
+        fs::write(&path, MINIMAL_PCB).expect("write");
+        let mut doc = PcbFile::read(&path).expect("read");
+
+        doc.add_footprint("Device:LED", 200.0, 100.0, "F.Cu", "D1", "LED_Red");
+        doc.write(&path).expect("write");
+
+        let reread = PcbFile::read(&path).expect("reread");
+        let fp = reread
+            .ast()
+            .footprints
+            .iter()
+            .find(|f| f.reference.as_deref() == Some("D1"))
+            .expect("footprint lost after write+read");
+        assert_eq!(fp.lib_id.as_deref(), Some("Device:LED"));
+        assert_eq!(fp.at, Some([200.0, 100.0]));
+        assert_eq!(fp.value.as_deref(), Some("LED_Red"));
+
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn add_trace_increases_count() {
+        let path = tmp_file("pcb_add_trace");
+        fs::write(&path, MINIMAL_PCB).expect("write");
+        let mut doc = PcbFile::read(&path).expect("read");
+
+        assert_eq!(doc.ast().trace_segment_count, 1);
+        doc.add_trace(0.0, 0.0, 100.0, 0.0, 0.25, "F.Cu", 1);
+        assert_eq!(doc.ast().trace_segment_count, 2);
+
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn remove_trace_at_decreases_count() {
+        let path = tmp_file("pcb_rm_trace");
+        fs::write(&path, MINIMAL_PCB).expect("write");
+        let mut doc = PcbFile::read(&path).expect("read");
+
+        doc.add_trace(0.0, 0.0, 100.0, 0.0, 0.25, "F.Cu", 1);
+        assert_eq!(doc.ast().trace_segment_count, 2);
+
+        doc.remove_trace_at(0.0, 0.0, 100.0, 0.0);
+        assert_eq!(doc.ast().trace_segment_count, 1);
+
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn add_via_increases_count() {
+        let path = tmp_file("pcb_add_via");
+        fs::write(&path, MINIMAL_PCB).expect("write");
+        let mut doc = PcbFile::read(&path).expect("read");
+
+        assert_eq!(doc.ast().via_count, 0);
+        doc.add_via(100.0, 100.0, 0.8, 0.4, 1);
+        assert_eq!(doc.ast().via_count, 1);
+
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn add_footprint_increases_count() {
+        let path = tmp_file("pcb_add_fp");
+        fs::write(&path, MINIMAL_PCB).expect("write");
+        let mut doc = PcbFile::read(&path).expect("read");
+
+        assert_eq!(doc.ast().footprint_count, 1);
+        doc.add_footprint("Device:C", 120.0, 100.0, "F.Cu", "C1", "100nF");
+        assert_eq!(doc.ast().footprint_count, 2);
+
+        let fps = &doc.ast().footprints;
+        assert!(fps.iter().any(|f| f.reference.as_deref() == Some("C1")));
+
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn remove_footprint_decreases_count() {
+        let path = tmp_file("pcb_rm_fp");
+        fs::write(&path, MINIMAL_PCB).expect("write");
+        let mut doc = PcbFile::read(&path).expect("read");
+
+        doc.add_footprint("Device:C", 120.0, 100.0, "F.Cu", "C1", "100nF");
+        assert_eq!(doc.ast().footprint_count, 2);
+
+        doc.remove_footprint("C1");
+        assert_eq!(doc.ast().footprint_count, 1);
+        assert!(!doc
+            .ast()
+            .footprints
+            .iter()
+            .any(|f| f.reference.as_deref() == Some("C1")));
+
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn move_footprint_updates_position() {
+        let path = tmp_file("pcb_fp_move");
+        fs::write(&path, MINIMAL_PCB).expect("write");
+        let mut doc = PcbFile::read(&path).expect("read");
+
+        doc.add_footprint("Device:R", 10.0, 20.0, "F.Cu", "R2", "100R");
+        let before = doc
+            .ast()
+            .footprints
+            .iter()
+            .find(|f| f.reference.as_deref() == Some("R2"))
+            .unwrap()
+            .at;
+        assert_eq!(before, Some([10.0, 20.0]));
+
+        doc.move_footprint("R2", 55.5, 66.6, None);
+        let fp = doc
+            .ast()
+            .footprints
+            .iter()
+            .find(|f| f.reference.as_deref() == Some("R2"))
+            .expect("footprint");
+        assert_eq!(fp.at, Some([55.5, 66.6]));
+
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn move_footprint_sets_rotation() {
+        let path = tmp_file("pcb_fp_move_rot");
+        fs::write(&path, MINIMAL_PCB).expect("write");
+        let mut doc = PcbFile::read(&path).expect("read");
+
+        doc.add_footprint("Device:R", 10.0, 20.0, "F.Cu", "R3", "100R");
+        doc.move_footprint("R3", 30.0, 40.0, Some(90.0));
+        let fp = doc
+            .ast()
+            .footprints
+            .iter()
+            .find(|f| f.reference.as_deref() == Some("R3"))
+            .expect("footprint");
+        assert_eq!(fp.at, Some([30.0, 40.0]));
+        assert_eq!(fp.rotation, Some(90.0));
+
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn move_footprint_survives_write_reread() {
+        let path = tmp_file("pcb_fp_move_rr");
+        fs::write(&path, MINIMAL_PCB).expect("write");
+        let mut doc = PcbFile::read(&path).expect("read");
+
+        doc.add_footprint("Device:R", 10.0, 20.0, "F.Cu", "R4", "100R");
+        doc.move_footprint("R4", 77.0, 88.0, Some(180.0));
+        doc.write(&path).expect("write");
+
+        let reread = PcbFile::read(&path).expect("reread");
+        let fp = reread
+            .ast()
+            .footprints
+            .iter()
+            .find(|f| f.reference.as_deref() == Some("R4"))
+            .expect("footprint");
+        assert_eq!(fp.at, Some([77.0, 88.0]));
+        assert_eq!(fp.rotation, Some(180.0));
+
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn move_footprint_noop_wrong_ref() {
+        let path = tmp_file("pcb_fp_move_noop");
+        fs::write(&path, MINIMAL_PCB).expect("write");
+        let mut doc = PcbFile::read(&path).expect("read");
+
+        let before_count = doc.ast().footprint_count;
+        doc.move_footprint("DOESNOTEXIST", 0.0, 0.0, None);
+        assert_eq!(doc.ast().footprint_count, before_count);
+
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn pcb_structural_roundtrip() {
+        let path = tmp_file("pcb_structural");
+        fs::write(&path, MINIMAL_PCB).expect("write");
+        let mut doc = PcbFile::read(&path).expect("read");
+
+        doc.add_footprint("Device:C", 120.0, 100.0, "F.Cu", "C1", "100nF")
+            .add_trace(100.0, 100.0, 120.0, 100.0, 0.25, "F.Cu", 2)
+            .add_via(110.0, 100.0, 0.8, 0.4, 2);
+
+        let out = tmp_file("pcb_structural_out");
+        doc.write(&out).expect("write");
+
+        let reread = PcbFile::read(&out).expect("reread");
+        assert_eq!(reread.ast().footprint_count, 2);
+        assert_eq!(reread.ast().trace_segment_count, 2);
+        assert_eq!(reread.ast().via_count, 1);
 
         let _ = fs::remove_file(path);
         let _ = fs::remove_file(out);

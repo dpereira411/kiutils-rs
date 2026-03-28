@@ -26,13 +26,16 @@
 //! - Official KiCad Rust IPC README:
 //!   <https://github.com/Milind220/kicad-api-rs-official/blob/main/README.md>
 //!
-//! ## V1 API scope
+//! ## API scope
 //! - `.kicad_pcb`
 //! - `.kicad_mod`
+//! - `.kicad_sch`
+//! - `.kicad_sym`
 //! - `fp-lib-table`
 //! - `sym-lib-table`
 //! - `.kicad_dru`
 //! - `.kicad_pro`
+//! - `.kicad_wks`
 //!
 //! Compatibility target:
 //! - Primary: KiCad v10
@@ -54,6 +57,12 @@
 //!
 //! Crate package name: `kiutils-rs`
 //! Rust import path: `kiutils_rs`
+
+/// Project-level entry point and batch loading utilities.
+pub use kiutils_kicad::{
+    load_schematic_tree, read_pcbs, read_pcbs_from_refs, read_schematics,
+    read_schematics_from_refs, read_symbol_libs, read_symbol_libs_from_refs,
+};
 
 /// Diagnostics, errors, and write behavior controls.
 pub use kiutils_kicad::{
@@ -82,3 +91,22 @@ pub use kiutils_kicad::{
 
 /// Project (`.kicad_pro`) APIs.
 pub use kiutils_kicad::{ProjectAst, ProjectDocument, ProjectExtra, ProjectFile};
+
+/// Schematic (`.kicad_sch`) APIs.
+pub use kiutils_kicad::{
+    fork_symbol_to_lib, merge_sheet_netlists, push_symbol_to_lib, rename_symbol_in_schematic,
+    replace_symbol_from_lib, replace_symbol_from_lib_with_library_name,
+    replace_symbol_from_lib_with_library_name_with_options, replace_symbol_from_lib_with_options,
+    update_symbols_from_lib, update_symbols_from_lib_with_options, ForkSymbolToLibOptions, NetPin,
+    SchematicAst, SchematicDocument, SchematicFile, SchematicLabelSummary, SchematicNet,
+    SchematicNetlist, SchematicPaperSummary, SchematicSymbolInfo, SchematicTitleBlockSummary,
+    SchematicWireSummary, UpdateFromLibOptions, UpdateFromLibReport,
+};
+
+/// Symbol library (`.kicad_sym`) APIs.
+pub use kiutils_kicad::{
+    PinSummary, SymbolLibAst, SymbolLibDocument, SymbolLibFile, SymbolSummary,
+};
+
+/// Worksheet (`.kicad_wks`) APIs.
+pub use kiutils_kicad::{WorksheetAst, WorksheetDocument, WorksheetFile, WorksheetSetupSummary};

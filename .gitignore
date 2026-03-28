@@ -2,3 +2,5 @@
 /kiutils/
 .DS_Store
 /crates/kiutils_kicad/examples/generated/
+/docs/book/
+.direnv/

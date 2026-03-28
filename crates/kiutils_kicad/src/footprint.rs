@@ -13,7 +13,7 @@ use crate::sexpr_utils::{
     atom_as_string, head_of, list_child_head_count, second_atom_i32, second_atom_string,
 };
 use crate::version_diag::collect_version_diagnostics;
-use crate::{Error, UnknownNode, WriteMode};
+use crate::{Error, UnknownNode, VersionPolicy, WriteMode};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -62,6 +62,7 @@ pub struct FootprintDocument {
     cst: CstDocument,
     diagnostics: Vec<Diagnostic>,
     ast_dirty: bool,
+    policy: VersionPolicy,
 }
 
 impl FootprintDocument {
@@ -179,13 +180,14 @@ impl FootprintDocument {
     where
         F: FnOnce(&mut Vec<Node>) -> bool,
     {
+        let policy = self.policy;
         mutate_root_and_refresh(
             &mut self.cst,
             &mut self.ast,
             &mut self.diagnostics,
             mutate,
             parse_ast,
-            |cst, ast| collect_diagnostics(cst, ast.version),
+            move |cst, ast| collect_diagnostics(cst, ast.version, &policy),
         );
         self.ast_dirty = false;
         self
@@ -196,22 +198,34 @@ pub struct FootprintFile;
 
 impl FootprintFile {
     pub fn read<P: AsRef<Path>>(path: P) -> Result<FootprintDocument, Error> {
+        Self::read_with_policy(path, VersionPolicy::default())
+    }
+
+    pub fn read_with_policy<P: AsRef<Path>>(
+        path: P,
+        policy: VersionPolicy,
+    ) -> Result<FootprintDocument, Error> {
         let raw = fs::read_to_string(path)?;
         let cst = parse_one(&raw)?;
         ensure_root_head_any(&cst, &["footprint", "module"])?;
         let ast = parse_ast(&cst);
-        let diagnostics = collect_diagnostics(&cst, ast.version);
+        let diagnostics = collect_diagnostics(&cst, ast.version, &policy);
         Ok(FootprintDocument {
             ast,
             cst,
             diagnostics,
             ast_dirty: false,
+            policy,
         })
     }
 }
 
-fn collect_diagnostics(cst: &CstDocument, version: Option<i32>) -> Vec<Diagnostic> {
-    let mut diagnostics = collect_version_diagnostics(version);
+fn collect_diagnostics(
+    cst: &CstDocument,
+    version: Option<i32>,
+    policy: &VersionPolicy,
+) -> Vec<Diagnostic> {
+    let mut diagnostics = collect_version_diagnostics(version, policy);
     if root_head(cst) == Some("module") {
         diagnostics.push(Diagnostic {
             severity: Severity::Warning,

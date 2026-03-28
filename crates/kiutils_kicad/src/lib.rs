@@ -25,7 +25,7 @@
 //! Evidence:
 //! - Round-trip + unknown preservation tests:
 //!   <https://github.com/Milind220/kiutils-rs/blob/main/crates/kiutils_kicad/tests/integration.rs>
-//! - CLI contract tests (`kiutils-inspect`):
+//! - Inspect binary contract tests (`kiutils-inspect`):
 //!   <https://github.com/Milind220/kiutils-rs/blob/main/crates/kiutils_kicad/tests/inspect_cli.rs>
 //!
 //! ## Quickstart
@@ -63,7 +63,10 @@ mod version_diag;
 mod worksheet;
 mod write_mode;
 
-pub use batch::{read_pcbs, read_pcbs_from_refs};
+pub use batch::{
+    load_schematic_tree, read_pcbs, read_pcbs_from_refs, read_schematics,
+    read_schematics_from_refs, read_symbol_libs, read_symbol_libs_from_refs,
+};
 pub use diagnostic::{Diagnostic, Severity, Span};
 pub use dru::{DesignRuleSummary, DesignRulesAst, DesignRulesDocument, DesignRulesFile};
 pub use error::Error;
@@ -79,10 +82,15 @@ pub use pcb::{
 };
 pub use project::{ProjectAst, ProjectDocument, ProjectExtra, ProjectFile};
 pub use schematic::{
-    SchematicAst, SchematicDocument, SchematicFile, SchematicPaperSummary, SchematicSymbolInfo,
-    SchematicTitleBlockSummary,
+    fork_symbol_to_lib, merge_sheet_netlists, push_symbol_to_lib, rename_symbol_in_schematic,
+    replace_symbol_from_lib, replace_symbol_from_lib_with_library_name,
+    replace_symbol_from_lib_with_library_name_with_options, replace_symbol_from_lib_with_options,
+    update_symbols_from_lib, update_symbols_from_lib_with_options, ForkSymbolToLibOptions, NetPin,
+    SchematicAst, SchematicDocument, SchematicFile, SchematicLabelSummary, SchematicNet,
+    SchematicNetlist, SchematicPaperSummary, SchematicSymbolInfo, SchematicTitleBlockSummary,
+    SchematicWireSummary, UpdateFromLibOptions, UpdateFromLibReport,
 };
-pub use symbol::{SymbolLibAst, SymbolLibDocument, SymbolLibFile, SymbolSummary};
+pub use symbol::{PinSummary, SymbolLibAst, SymbolLibDocument, SymbolLibFile, SymbolSummary};
 pub use unknown::{UnknownField, UnknownNode};
 pub use version::{KiCadSeries, VersionPolicy};
 pub use worksheet::{WorksheetAst, WorksheetDocument, WorksheetFile, WorksheetSetupSummary};

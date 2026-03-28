@@ -1,8 +1,10 @@
 use crate::diagnostic::{Diagnostic, Severity};
 use crate::version::VersionPolicy;
 
-pub(crate) fn collect_version_diagnostics(version: Option<i32>) -> Vec<Diagnostic> {
-    let policy = VersionPolicy::default();
+pub(crate) fn collect_version_diagnostics(
+    version: Option<i32>,
+    policy: &VersionPolicy,
+) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
 
     if let Some(v) = version {
